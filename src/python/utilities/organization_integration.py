@@ -1,26 +1,24 @@
 import argparse
 import boto3
 import botocore
+import os
 from botocore.exceptions import ClientError
 # TODO REMOVE
 from pprint import pprint
 
 
-def main(access, secret, environment):
+def main(environment):
     print("Creating Boto3 Session")
-    session = boto3.Session(
-        aws_access_key_id=access,
-        aws_secret_access_key=secret,
-        region_name="us-east-1"
-    )
+    # Set the AWS_PROFILE environment variable
+    os.environ['AWS_PROFILE'] = 'staging'
 
     # Set up the Organizations client
-    org_client = session.client('organizations')
+    org_client = boto3.client('organizations')
 
     # Set up the STS client
     sts_client = boto3.client('sts')
 
-    # Call a boto function to fetch all accounts
+    # Call a Boto3 function to fetch all accounts
     print("Fetching all accounts connected to the organization")
     list_accounts = []
     next_token = None
@@ -69,10 +67,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='This script will integrate Lightlytics environment with every account in the organization.')
     parser.add_argument(
-        "--organization_access_key", help="Access key with Organization-level permissions", required=True)
-    parser.add_argument(
-        "--organization_secret_key", help="Secret key with Organization-level permissions", required=True)
-    parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain", required=True)
+        "--environment_sub_domain", help="The Lightlytics environment sub domain")
     args = parser.parse_args()
-    main(args.organization_access_key, args.organization_secret_key, args.environment_sub_domain)
+    main(args.environment_sub_domain)
