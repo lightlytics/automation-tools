@@ -3,11 +3,17 @@ import boto3
 import botocore
 import os
 from botocore.exceptions import ClientError
+from src.python.common.graph_common import *
 # TODO REMOVE
 from pprint import pprint
 
 
-def main(environment):
+def main(environment, ll_username, ll_password):
+    # Setting up variables
+    ll_url = f"https://{environment}.lightlytics.com/graphql"
+    ll_url = f"https://{environment}.lightops.io/graphql"
+    ll_token = get_token(ll_url, ll_username, ll_password)
+
     print("Creating Boto3 Session")
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = 'staging'
@@ -32,7 +38,7 @@ def main(environment):
             next_token = list_accounts_operation["NextToken"]
         else:
             break
-    # Getting only the account IDs
+    # Getting only the account IDs of the active AWS accounts
     sub_accounts = [a["Id"] for a in list_accounts if a["Status"] == "ACTIVE"]
     print(f"Found {len(sub_accounts)} accounts")
 
@@ -68,5 +74,9 @@ if __name__ == "__main__":
         description='This script will integrate Lightlytics environment with every account in the organization.')
     parser.add_argument(
         "--environment_sub_domain", help="The Lightlytics environment sub domain")
+    parser.add_argument(
+        "--environment_user_name", help="The Lightlytics environment user name")
+    parser.add_argument(
+        "--environment_password", help="The Lightlytics environment password")
     args = parser.parse_args()
-    main(args.environment_sub_domain)
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password)
