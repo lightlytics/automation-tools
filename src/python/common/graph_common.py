@@ -1,3 +1,4 @@
+import datetime
 import json
 import requests
 import time
@@ -110,6 +111,26 @@ class GraphCommon(object):
         else:
             return True
 
+    def get_specific_account(self, account_id):
+        """ Get specific account.
+            :param account_id (str) - Specific AWS account ID.
+            :returns (dict)         - Account details.
+        """
+        account = [a for a in self.get_accounts() if a['aws_account_id'] == account_id][0]
+        try:
+            return account
+        except IndexError:
+            raise Exception(f"Can't find the desired account: {account_id}")
+
+    def get_account_status(self, account_id):
+        """ Get account status.
+            :param account_id (str) - Specific AWS account ID.
+            :returns (str)          - Integration status.
+        """
+        accounts = self.get_accounts()
+        specific_account = next(account for account in accounts if account["aws_account_id"] == account_id)
+        return specific_account["status"]
+
     def get_template_by_account_id(self, account_id):
         """ Get template from specific account.
             :param account_id (str) - Specific AWS account ID.
@@ -117,6 +138,42 @@ class GraphCommon(object):
         """
         account = [a for a in self.get_accounts() if a['aws_account_id'] == account_id][0]
         return account['template_url']
+
+    def wait_for_account_connection(self, account, timeout=600):
+        """ Wait for account to be connected.
+            :param timeout (int)    - Max waiting time; Defaults to 600.
+            :param account (str)    - Account ID.
+            :returns (str)          - Account's status.
+        """
+
+        dt_start = datetime.datetime.utcnow()
+        dt_diff = 0
+        account_status = ''
+        while dt_diff < timeout:
+            account_status = self.get_account_status(account)
+            dt_finish = datetime.datetime.utcnow()
+            dt_diff = (dt_finish - dt_start).total_seconds()
+            if account_status != "READY":
+                time.sleep(1)
+            else:
+                return account_status
+        return account_status
+
+    def edit_regions(self, account_id, regions_list):
+        """ Edit regions list.
+            :param account_id (str)     - Specific AWS account ID.
+            :param regions_list (list)  - Region's list which the user wants to add.
+            :returns (dict)             - Account details.
+        """
+        payload_operation = "updateAccount"
+        payload_vars = {"id": self.get_specific_account(account_id)["_id"],
+                        "account": {"aws_regions": regions_list}}
+        query = "mutation updateAccount($id: ID!, $account: AccountUpdateInput) {updateAccount(id: $id, account:" \
+                " $account) {_id display_name aws_regions template_url collection_template_url __typename }}"
+        res = self.graph_query(payload_operation, payload_vars, query)
+        if "errors" in res:
+            raise Exception(f"Something else occurred, error: {res.text}")
+        return res["data"]["updateAccount"]
 
     @staticmethod
     def create_graph_payload(operation_name, variables, query):

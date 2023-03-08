@@ -3,28 +3,21 @@ import boto3
 import botocore
 import os
 import random
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
-
-# TODO REMOVE
-from pprint import pprint
-
-GLOBAL_REGION = "us-east-1"
 
 
 def main(environment, ll_username, ll_password):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
 
-    # TODO REMOVE COMMENTS
-    # print("Trying to login into Lightlytics")
-    # # TODO REMOVE io URL
-    # ll_url = f"https://{environment}.lightlytics.com/graphql"
-    # ll_url = f"https://{environment}.lightops.io/graphql"
-    # graph_client = GraphCommon(ll_url, ll_username, ll_password)
-    # print("Logged in successfully!")
+    print("Trying to login into Lightlytics")
+    # TODO REMOVE io URL
+    ll_url = f"https://{environment}.lightlytics.com/graphql"
+    ll_url = f"https://{environment}.lightops.io/graphql"
+    graph_client = GraphCommon(ll_url, ll_username, ll_password)
+    print("Logged in successfully!")
 
     print("Creating Boto3 Session")
     # Set the AWS_PROFILE environment variable
@@ -63,33 +56,51 @@ def main(environment, ll_username, ll_password):
             )
             print("Session initialized successfully")
 
-            # TODO REMOVE COMMENTS
-            # print("Checking if integration already exists")
-            # if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
-            #     print("Account is already integrated, skipping")
-            #     continue
-            #
-            # print(f"Creating {sub_account} account in Lightlytics")
-            # graph_client.create_account(sub_account, [GLOBAL_REGION])
-            # print("Account created successfully")
-            #
-            # print("Fetching the CFT Template URL from lightlytics")
-            # sub_account_template_url = graph_client.get_template_by_account_id(sub_account)
-            # print(f"Fetched successfully, the template URL: {sub_account_template_url}")
-            #
-            # # Initializing "cloudformation" boto client
-            # cf = sub_account_session.client('cloudformation')
-            #
-            # print("Creating the CFT stack using Boto")
-            # stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
-            # sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
-            # print(f"{sub_account_stack_id} Created successfully")
-            #
-            # print("Waiting for the stack to finish deploying successfully")
-            # wait_for_cloudformation(sub_account_stack_id, cf)
+            print("Checking if integration already exists")
+            if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
+                print("Account is already integrated, skipping")
+                continue
+
+            print(f"Creating {sub_account} account in Lightlytics")
+            graph_client.create_account(sub_account, [sub_account_session.region_name])
+            print("Account created successfully")
+
+            print("Fetching the CFT Template URL from lightlytics")
+            sub_account_template_url = graph_client.get_template_by_account_id(sub_account)
+            print(f"Fetched successfully, the template URL: {sub_account_template_url}")
+
+            # Initializing "cloudformation" boto client
+            cf = sub_account_session.client('cloudformation')
+
+            print("Creating the CFT stack using Boto")
+            stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
+            sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
+            print(f"{sub_account_stack_id} Created successfully")
+
+            print("Waiting for the stack to finish deploying successfully")
+            wait_for_cloudformation(sub_account_stack_id, cf)
+
+            print("Waiting for the account to finish integrating with Lightlytics")
+            account_status = graph_client.wait_for_account_connection(sub_account)
+            if account_status != "READY":
+                print(f"Account is in the state of {account_status}, integration failed")
+                continue
+            print(f"Account {sub_account} integrated successfully with Lightlytics")
 
             print("Getting active regions (Has EC2 instances)")
             active_regions = get_active_regions(sub_account_session, regions)
+            print(f"Active regions are: {active_regions}")
+
+            print("Updating regions in Lightlytics according to active regions")
+            graph_client.edit_regions(sub_account, active_regions)
+            print(f"Updated regions to {active_regions}")
+
+            print("Waiting for the account to finish editing regions")
+            account_status = graph_client.wait_for_account_connection(sub_account)
+            if account_status != "READY":
+                print(f"Account is in the state of {account_status}, integration failed")
+                continue
+            print(f"Editing regions finished successfully")
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
