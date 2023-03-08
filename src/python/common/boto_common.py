@@ -24,6 +24,8 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
         :param cft_id (str)         - Stack ID.
         :param cf_client (object)   - CF Session.
     """
+    time.sleep(10)
+
     dt_start = datetime.datetime.utcnow()
     dt_diff = 0
 
@@ -39,16 +41,15 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
             break
         else:
             time.sleep(1)
-            time.sleep(20)
     if dt_diff >= timeout:
         print("Timed out before stack has been created/deleted")
         return False
     return True
 
 
-def create_init_stack_payload(sub_account_template_url, random_int):
+def create_stack_payload(stack_name, sub_account_template_url):
     stack_creation_payload = {
-        "StackName": f"LightlyticsStack-{random_int}",
+        "StackName": stack_name,
         "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         "OnFailure": 'ROLLBACK',
         "EnableTerminationProtection": False,

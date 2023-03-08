@@ -31,8 +31,8 @@ class GraphCommon(object):
         payload = self.create_graph_payload(payload_operation, payload_vars, query)
         try:
             res = requests.post(self.url, json=payload)
-        except:
-            raise Exception(f"URL doesn't exist --> {self.url}")
+        except Exception as e:
+            raise Exception(f"URL doesn't exist --> {self.url}, error: {e}")
         if 'errors' not in res.text:
             eval_res = json.loads(res.text)
             self.token = 'Bearer ' + eval_res['data']['login']['access_token']
@@ -40,22 +40,20 @@ class GraphCommon(object):
         else:
             raise Exception(f"Could not get token, error: {res.text}")
 
-    def get_customer_id(self, email=None, pw=None, token=None, logger="logger"):
+    def get_customer_id(self, email=None, pw=None, token=None):
         """ Get customer id from graph.
             :param email (str)  - The email for login.
             :param pw (str)     - The password for login.
             :param token (str)  - Token.
-            :param logger (str) - Logger.
             :returns (str)      - The first customer id.
         """
-        return self.get_all_customer_ids(email, pw, token, logger)[0]
+        return self.get_all_customer_ids(email, pw, token)[0]
 
-    def get_all_customer_ids(self, email=None, pw=None, raw=False, logger="logger"):
+    def get_all_customer_ids(self, email=None, pw=None, raw=False):
         """ Get all customer ids from graph.
             :param email (str)  - The email for login.
             :param pw (str)     - The password for login.
             :param raw (bool)   - Whether the return the entire result not just the IDs.
-            :param logger (str) - Logger.
             :returns (str)      - Customer ids list.
         """
         email = email or self.email
@@ -66,8 +64,8 @@ class GraphCommon(object):
         payload = self.create_graph_payload(None, payload_vars, query)
         try:
             res = requests.post(self.url, json=payload, headers={"Authorization": token})
-        except:
-            raise Exception(f"URL doesn't exist --> {self.url}")
+        except Exception as e:
+            raise Exception(f"URL doesn't exist --> {self.url}, error: {e}")
         if 'errors' not in res.text:
             eval_res = json.loads(res.text)
             if raw:
@@ -130,14 +128,6 @@ class GraphCommon(object):
         accounts = self.get_accounts()
         specific_account = next(account for account in accounts if account["aws_account_id"] == account_id)
         return specific_account["status"]
-
-    def get_template_by_account_id(self, account_id):
-        """ Get template from specific account.
-            :param account_id (str) - Specific AWS account ID.
-            :returns (str)          - The template url of a specific account.
-        """
-        account = [a for a in self.get_accounts() if a['aws_account_id'] == account_id][0]
-        return account['template_url']
 
     def wait_for_account_connection(self, account, timeout=600):
         """ Wait for account to be connected.

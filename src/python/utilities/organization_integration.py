@@ -65,15 +65,18 @@ def main(environment, ll_username, ll_password):
             graph_client.create_account(sub_account, [sub_account_session.region_name])
             print("Account created successfully")
 
-            print("Fetching the CFT Template URL from lightlytics")
-            sub_account_template_url = graph_client.get_template_by_account_id(sub_account)
-            print(f"Fetched successfully, the template URL: {sub_account_template_url}")
+            print("Fetching relevant account information")
+            account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["aws_account_id"] == sub_account][0]
+            sub_account_template_url = account_information["template_url"]
+            ll_collection_template = account_information["collection_template_url"]
+            print("Finished fetching information")
 
             # Initializing "cloudformation" boto client
             cf = sub_account_session.client('cloudformation')
 
             print("Creating the CFT stack using Boto")
-            stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
+            stack_creation_payload = create_stack_payload(f"LightlyticsStack-{random_int}", sub_account_template_url)
             sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
             print(f"{sub_account_stack_id} Created successfully")
 
@@ -101,6 +104,19 @@ def main(environment, ll_username, ll_password):
                 print(f"Account is in the state of {account_status}, integration failed")
                 continue
             print(f"Editing regions finished successfully")
+
+            print("Adding collection CFT stack for realtime events for each region")
+            for region in active_regions:
+                print(f"Adding collection CFT stack for {region}")
+                region_client = sub_account_session.client('cloudformation', region_name=region)
+                stack_creation_payload = create_stack_payload(
+                    f"LightlyticsStack-collection-{region}-{random_int}", ll_collection_template)
+                collection_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
+                print(f"Collection stack {collection_stack_id} deploying")
+
+                print("Waiting for the stack to finish deploying successfully")
+                wait_for_cloudformation(sub_account_stack_id, region_client)
+            print(f"Realtime enabled for {active_regions}")
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
