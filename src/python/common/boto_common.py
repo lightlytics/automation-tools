@@ -2,6 +2,22 @@ import datetime
 import time
 
 
+def get_all_accounts(org_client):
+    list_accounts = []
+    next_token = None
+    while True:
+        if next_token:
+            list_accounts_operation = org_client.list_accounts(NextToken=next_token)
+        else:
+            list_accounts_operation = org_client.list_accounts()
+        list_accounts.extend(list_accounts_operation["Accounts"])
+        if 'NextToken' in list_accounts_operation:
+            next_token = list_accounts_operation["NextToken"]
+        else:
+            break
+    return list_accounts
+
+
 def wait_for_cloudformation(cft_id, cf_client, timeout=180):
     """ Wait for stack to be deployed.
         :param timeout (int)        - Max waiting time; Defaults to 180.

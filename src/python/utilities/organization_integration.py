@@ -35,18 +35,8 @@ def main(environment, ll_username, ll_password):
     sts_client = boto3.client('sts')
 
     print("Fetching all accounts connected to the organization")
-    list_accounts = []
-    next_token = None
-    while True:
-        if next_token:
-            list_accounts_operation = org_client.list_accounts(NextToken=next_token)
-        else:
-            list_accounts_operation = org_client.list_accounts()
-        list_accounts.extend(list_accounts_operation["Accounts"])
-        if 'NextToken' in list_accounts_operation:
-            next_token = list_accounts_operation["NextToken"]
-        else:
-            break
+    list_accounts = get_all_accounts(org_client)
+
     # Getting only the account IDs of the active AWS accounts
     sub_accounts = [a["Id"] for a in list_accounts if a["Status"] == "ACTIVE"]
     print(f"Found {len(sub_accounts)} accounts")
@@ -68,29 +58,29 @@ def main(environment, ll_username, ll_password):
             )
             print("Session initialized successfully")
 
-            print("Checking if integration already exists")
-            if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
-                print("Account is already integrated, skipping")
-                continue
-
-            print(f"Creating {sub_account} account in Lightlytics")
-            graph_client.create_account(sub_account, [GLOBAL_REGION])
-            print("Account created successfully")
-
-            print("Fetching the CFT Template URL from lightlytics")
-            sub_account_template_url = graph_client.get_template_by_account_id(sub_account)
-            print(f"Fetched successfully, the template URL: {sub_account_template_url}")
-
-            # Initializing "cloudformation" boto client
-            cf = sub_account_session.client('cloudformation')
-
-            print("Creating the CFT stack using Boto")
-            stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
-            sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
-            print(f"{sub_account_stack_id} Created successfully")
-
-            print("Waiting for the stack to finish deploying successfully")
-            wait_for_cloudformation(sub_account_stack_id, cf)
+            # print("Checking if integration already exists")
+            # if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
+            #     print("Account is already integrated, skipping")
+            #     continue
+            #
+            # print(f"Creating {sub_account} account in Lightlytics")
+            # graph_client.create_account(sub_account, [GLOBAL_REGION])
+            # print("Account created successfully")
+            #
+            # print("Fetching the CFT Template URL from lightlytics")
+            # sub_account_template_url = graph_client.get_template_by_account_id(sub_account)
+            # print(f"Fetched successfully, the template URL: {sub_account_template_url}")
+            #
+            # # Initializing "cloudformation" boto client
+            # cf = sub_account_session.client('cloudformation')
+            #
+            # print("Creating the CFT stack using Boto")
+            # stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
+            # sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
+            # print(f"{sub_account_stack_id} Created successfully")
+            #
+            # print("Waiting for the stack to finish deploying successfully")
+            # wait_for_cloudformation(sub_account_stack_id, cf)
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
