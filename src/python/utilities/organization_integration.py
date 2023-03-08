@@ -85,13 +85,7 @@ def main(environment, ll_username, ll_password):
             cf = sub_account_session.client('cloudformation')
 
             print("Creating the CFT stack using Boto")
-            stack_creation_payload = {
-                "StackName": f"LightlyticsStack-{random_int}",
-                "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
-                "OnFailure": 'ROLLBACK',
-                "EnableTerminationProtection": False,
-                "TemplateURL": sub_account_template_url
-            }
+            stack_creation_payload = create_init_stack_payload(sub_account_template_url, random_int)
             sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
             print(f"{sub_account_stack_id} Created successfully")
 
@@ -115,8 +109,7 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
     print(f"Waiting for stack to finish creating, timeout is {timeout} seconds")
     while dt_diff < timeout:
         stack_list = cf_client.list_stacks()
-        pprint(stack_list)
-        status = [stack['StackStatus'] for stack in stack_list['StackSummaries'] if stack['StackId'] == cft_id]
+        status = [stack['StackStatus'] for stack in stack_list['StackSummaries'] if stack['StackId'] == cft_id][0]
         dt_finish = datetime.datetime.utcnow()
         dt_diff = (dt_finish - dt_start).total_seconds()
 
@@ -130,6 +123,17 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
         print("Timed out before stack has been created/deleted")
         return False
     return True
+
+
+def create_init_stack_payload(sub_account_template_url, random_int):
+    stack_creation_payload = {
+        "StackName": f"LightlyticsStack-{random_int}",
+        "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
+        "OnFailure": 'ROLLBACK',
+        "EnableTerminationProtection": False,
+        "TemplateURL": sub_account_template_url
+    }
+    return stack_creation_payload
 
 
 if __name__ == "__main__":
