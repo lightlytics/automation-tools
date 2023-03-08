@@ -55,3 +55,16 @@ def create_init_stack_payload(sub_account_template_url, random_int):
         "TemplateURL": sub_account_template_url
     }
     return stack_creation_payload
+
+
+def get_active_regions(sub_account_session, regions):
+    active_regions = [sub_account_session.region_name]
+    for region in regions:
+        try:
+            ec2_client = sub_account_session.client('ec2', region_name=region)
+            instances = ec2_client.describe_instances()["Reservations"][0]["Instances"]
+            if len(instances) > 0:
+                active_regions.append(region)
+        except:
+            continue
+    return list(set(active_regions))

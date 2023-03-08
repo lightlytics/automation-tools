@@ -3,6 +3,7 @@ import boto3
 import botocore
 import os
 import random
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
@@ -17,12 +18,13 @@ def main(environment, ll_username, ll_password):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
 
-    print("Trying to login into Lightlytics")
-    # TODO REMOVE io URL
-    ll_url = f"https://{environment}.lightlytics.com/graphql"
-    ll_url = f"https://{environment}.lightops.io/graphql"
-    graph_client = GraphCommon(ll_url, ll_username, ll_password)
-    print("Logged in successfully!")
+    # TODO REMOVE COMMENTS
+    # print("Trying to login into Lightlytics")
+    # # TODO REMOVE io URL
+    # ll_url = f"https://{environment}.lightlytics.com/graphql"
+    # ll_url = f"https://{environment}.lightops.io/graphql"
+    # graph_client = GraphCommon(ll_url, ll_username, ll_password)
+    # print("Logged in successfully!")
 
     print("Creating Boto3 Session")
     # Set the AWS_PROFILE environment variable
@@ -33,6 +35,9 @@ def main(environment, ll_username, ll_password):
 
     # Set up the STS client
     sts_client = boto3.client('sts')
+
+    # Get all activated regions from Org account
+    regions = [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
 
     print("Fetching all accounts connected to the organization")
     list_accounts = get_all_accounts(org_client)
@@ -58,6 +63,7 @@ def main(environment, ll_username, ll_password):
             )
             print("Session initialized successfully")
 
+            # TODO REMOVE COMMENTS
             # print("Checking if integration already exists")
             # if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
             #     print("Account is already integrated, skipping")
@@ -81,6 +87,9 @@ def main(environment, ll_username, ll_password):
             #
             # print("Waiting for the stack to finish deploying successfully")
             # wait_for_cloudformation(sub_account_stack_id, cf)
+
+            print("Getting active regions (Has EC2 instances)")
+            active_regions = get_active_regions(sub_account_session, regions)
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
