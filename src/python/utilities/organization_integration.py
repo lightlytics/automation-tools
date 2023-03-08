@@ -1,11 +1,10 @@
 import argparse
 import boto3
 import botocore
-import datetime
 import os
 import random
-import time
 from botocore.exceptions import ClientError
+from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
 
 # TODO REMOVE
@@ -19,6 +18,7 @@ def main(environment, ll_username, ll_password):
     random_int = random.randint(1000000, 9999999)
 
     print("Trying to login into Lightlytics")
+    # TODO REMOVE io URL
     ll_url = f"https://{environment}.lightlytics.com/graphql"
     ll_url = f"https://{environment}.lightops.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password)
@@ -95,45 +95,6 @@ def main(environment, ll_username, ll_password):
         except botocore.exceptions.ClientError as e:
             # Print an error message
             print("Error for sub_account {}: {}".format(sub_account, e))
-
-
-def wait_for_cloudformation(cft_id, cf_client, timeout=180):
-    """ Wait for stack to be deployed.
-        :param timeout (int)        - Max waiting time; Defaults to 180.
-        :param cft_id (str)         - Stack ID.
-        :param cf_client (object)   - CF Session.
-    """
-    dt_start = datetime.datetime.utcnow()
-    dt_diff = 0
-
-    print(f"Waiting for stack to finish creating, timeout is {timeout} seconds")
-    while dt_diff < timeout:
-        stack_list = cf_client.list_stacks()
-        status = [stack['StackStatus'] for stack in stack_list['StackSummaries'] if stack['StackId'] == cft_id][0]
-        dt_finish = datetime.datetime.utcnow()
-        dt_diff = (dt_finish - dt_start).total_seconds()
-
-        if status == 'CREATE_COMPLETE':
-            print(f'Stack deployed successfully after {dt_diff} seconds')
-            break
-        else:
-            time.sleep(1)
-            time.sleep(20)
-    if dt_diff >= timeout:
-        print("Timed out before stack has been created/deleted")
-        return False
-    return True
-
-
-def create_init_stack_payload(sub_account_template_url, random_int):
-    stack_creation_payload = {
-        "StackName": f"LightlyticsStack-{random_int}",
-        "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
-        "OnFailure": 'ROLLBACK',
-        "EnableTerminationProtection": False,
-        "TemplateURL": sub_account_template_url
-    }
-    return stack_creation_payload
 
 
 if __name__ == "__main__":
