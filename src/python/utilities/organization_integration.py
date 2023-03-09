@@ -13,7 +13,7 @@ def main(environment, ll_username, ll_password):
     random_int = random.randint(1000000, 9999999)
 
     print("Trying to login into Lightlytics")
-    ll_url = f"https://{environment}.lightops.io/graphql"
+    ll_url = f"https://{environment}.lightlytics.com/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password)
     print("Logged in successfully!")
 
