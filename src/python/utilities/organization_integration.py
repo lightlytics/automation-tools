@@ -14,7 +14,6 @@ def main(environment, ll_username, ll_password):
 
     print("Trying to login into Lightlytics")
     ll_url = f"https://{environment}.lightlytics.com/graphql"
-    ll_url = f"https://{environment}.lightops.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password)
     print("Logged in successfully!")
 
@@ -39,8 +38,6 @@ def main(environment, ll_username, ll_password):
     print(f"Found {len(sub_accounts)} accounts")
 
     for sub_account in sub_accounts:
-        if sub_account != "139614369439":
-            continue
         try:
             # Assume the role in the sub_account
             assumed_role = sts_client.assume_role(
