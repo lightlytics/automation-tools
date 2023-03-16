@@ -1,5 +1,5 @@
-boto3~=1.26.67
+boto3~=1.23.10
 requests~=2.25.0
-botocore~=1.29.87
-tqdm~=4.65.0
-termcolor~=2.2.0
+botocore~=1.26.10
+tqdm~=4.64.1
+termcolor~=1.1.0
