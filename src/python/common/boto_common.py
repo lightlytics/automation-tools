@@ -1,5 +1,6 @@
 import datetime
 import time
+from termcolor import colored
 
 
 def get_all_accounts(org_client):
@@ -29,7 +30,7 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
     dt_start = datetime.datetime.utcnow()
     dt_diff = 0
 
-    print(f"Waiting for stack to finish creating, timeout is {timeout} seconds")
+    print(colored(f"Waiting for stack to finish creating, timeout is {timeout} seconds", "blue"))
     while dt_diff < timeout:
         stack_list = cf_client.list_stacks()
         status = [stack['StackStatus'] for stack in stack_list['StackSummaries'] if stack['StackId'] == cft_id][0]
@@ -37,12 +38,12 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
         dt_diff = (dt_finish - dt_start).total_seconds()
 
         if status == 'CREATE_COMPLETE':
-            print(f'Stack deployed successfully after {dt_diff} seconds')
+            print(colored(f'Stack deployed successfully after {dt_diff} seconds', "green"))
             break
         else:
             time.sleep(1)
     if dt_diff >= timeout:
-        print("Timed out before stack has been created/deleted")
+        print(colored("Timed out before stack has been created/deleted", "red"))
         return False
     return True
 
