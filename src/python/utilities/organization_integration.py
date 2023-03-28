@@ -1,9 +1,7 @@
 import argparse
 import boto3
-import botocore
 import os
 import random
-from botocore.exceptions import ClientError
 from pprint import pprint
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
