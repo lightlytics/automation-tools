@@ -8,7 +8,7 @@ from src.python.common.graph_common import GraphCommon
 from termcolor import colored as color
 
 
-def main(environment, ll_username, ll_password):
+def main(environment, ll_username, ll_password, aws_profile_name):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
 
@@ -19,7 +19,7 @@ def main(environment, ll_username, ll_password):
 
     print(color("Creating Boto3 Session", "blue"))
     # Set the AWS_PROFILE environment variable
-    os.environ['AWS_PROFILE'] = 'staging'
+    os.environ['AWS_PROFILE'] = aws_profile_name
 
     # Set up the Organizations client
     org_client = boto3.client('organizations')
@@ -142,5 +142,8 @@ if __name__ == "__main__":
         "--environment_user_name", help="The Lightlytics environment user name")
     parser.add_argument(
         "--environment_password", help="The Lightlytics environment password")
+    parser.add_argument(
+        "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
+        default="staging")
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.environment_user_name, args.environment_password)
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.aws_profile_name)
