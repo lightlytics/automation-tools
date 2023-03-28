@@ -2,10 +2,17 @@ import argparse
 import boto3
 import os
 import random
+import sys
 from pprint import pprint
-from src.python.common.boto_common import *
-from src.python.common.graph_common import GraphCommon
 from termcolor import colored as color
+
+try:
+    from src.python.common.boto_common import *
+    from src.python.common.graph_common import GraphCommon
+except ModuleNotFoundError:
+    sys.path.append("../../..")
+    from src.python.common.boto_common import *
+    from src.python.common.graph_common import GraphCommon
 
 
 def main(environment, ll_username, ll_password, aws_profile_name):
