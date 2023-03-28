@@ -43,7 +43,7 @@ def main(environment, ll_username, ll_password):
     accounts_integrated = {}
 
     for sub_account in sub_accounts:
-        print(color(f"Starting integration on {sub_account}", color="blue", attrs="bold"))
+        print(color(f"Starting integration on {sub_account}", color="blue"))
         try:
             # Assume the role in the sub_account
             assumed_role = sts_client.assume_role(
@@ -110,7 +110,7 @@ def main(environment, ll_username, ll_password):
                 continue
             print(color(f"Editing regions finished successfully", "green"))
 
-            print(color("Adding collection CFT stack for realtime events for each region", color="blue", attrs="bold"))
+            print(color("Adding collection CFT stack for realtime events for each region", color="blue"))
             for region in active_regions:
                 print(color(f"Adding collection CFT stack for {region}", "blue"))
                 region_client = sub_account_session.client('cloudformation', region_name=region)
