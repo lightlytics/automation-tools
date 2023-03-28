@@ -126,9 +126,10 @@ def main(environment, ll_username, ll_password):
                 accounts_integrated[sub_account].append(region)
             print(color(f"Realtime enabled for {active_regions}", "green"))
 
-        except botocore.exceptions.ClientError as e:
-            # Print an error message
+        except Exception as e:
+            # Print the error message
             print(color(f"Error for sub_account {sub_account}: {e}", "red"))
+            continue
 
     print(color("Integration finished successfully!", "green"))
     pprint(accounts_integrated)
