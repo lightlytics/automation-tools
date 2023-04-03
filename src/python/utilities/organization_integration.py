@@ -88,7 +88,7 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                     regions_to_integrate = [i for i in potential_regions if i not in realtime_regions]
                     if len(regions_to_integrate) > 0:
                         print(color(f"Realtime is not enabled on all regions, adding support", "blue"))
-                        deploy_collection_stack(
+                        accounts_integrated = deploy_collection_stack(
                             regions_to_integrate, sub_account_session, random_int, sub_account_information,
                             accounts_integrated, sub_account)
                     else:
@@ -127,7 +127,7 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                 continue
 
             # Deploying collections stacks for all regions
-            deploy_collection_stack(
+            accounts_integrated = deploy_collection_stack(
                 active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account)
 
         except Exception as e:
@@ -195,6 +195,7 @@ def deploy_collection_stack(
         # Adding realtime to finished dict
         accounts_integrated[sub_account[0]].append(region)
     print(color(f"Realtime enabled for {active_regions}", "green"))
+    return accounts_integrated
 
 
 if __name__ == "__main__":
