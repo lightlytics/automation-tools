@@ -86,11 +86,11 @@ class GraphCommon(object):
                 "stack_region account_aliases __typename}}"
         return self.graph_query(operation, {}, query)['data']['accounts']
 
-    def create_account(self, account_id, regions_list, external_id=None):
+    def create_account(self, account_id, regions_list, display_name=None):
         """ Create account.
             :param account_id (str)     - Specific AWS account ID.
             :param regions_list (list)  - Regions which the user want to add.
-            :param external_id (str)    - External ID for AWS user; Defaults to None.
+            :param display_name (str)    - Display name for AWS Account; Defaults to None.
             :returns (dict)             - Account details.
         """
         payload_operation = "CreateAccount"
@@ -98,8 +98,8 @@ class GraphCommon(object):
                                     "aws_account_id": account_id,
                                     "aws_regions": regions_list,
                                     "stack_region": regions_list[0]}}
-        if external_id:
-            payload_vars['account']["external_id"] = external_id
+        if display_name:
+            payload_vars['account']["display_name"] = display_name
         query = "mutation CreateAccount($account: AccountInput){createAccount(account: $account){_id __typename}}"
         res = self.graph_query(payload_operation, payload_vars, query)
         if "errors" in res:

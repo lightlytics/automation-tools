@@ -41,21 +41,21 @@ def main(environment, ll_username, ll_password, aws_profile_name):
     list_accounts = get_all_accounts(org_client)
 
     # Getting only the account IDs of the active AWS accounts
-    sub_accounts = [a["Id"] for a in list_accounts if a["Status"] == "ACTIVE"]
+    sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     print(color(f"Found {len(sub_accounts)} accounts", "blue"))
 
     # Setting the dict for successfully integrated accounts
     accounts_integrated = {}
 
     for sub_account in sub_accounts:
-        print(color(f"Starting integration on {sub_account}", color="blue"))
+        print(color(f"Starting integration on {sub_account[0]}", color="blue"))
         try:
-            # Assume the role in the sub_account
+            # Assume the role in the sub_account[0]
             assumed_role = sts_client.assume_role(
-                RoleArn=f'arn:aws:iam::{sub_account}:role/OrganizationAccountAccessRole',
+                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
                 RoleSessionName='MySessionName'
             )
-            print(color(f"Initializing session for account: {sub_account}", "blue"))
+            print(color(f"Initializing session for account: {sub_account[0]}", "blue"))
             sub_account_session = boto3.Session(
                 aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
                 aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
@@ -64,17 +64,17 @@ def main(environment, ll_username, ll_password, aws_profile_name):
             print(color("Session initialized successfully", "green"))
 
             print(color("Checking if integration already exists", "blue"))
-            if sub_account in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
+            if sub_account[0] in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
                 print(color("Account is already integrated, skipping", "yellow"))
                 continue
 
-            print(color(f"Creating {sub_account} account in Lightlytics", "blue"))
-            graph_client.create_account(sub_account, [sub_account_session.region_name])
+            print(color(f"Creating {sub_account[0]} account in Lightlytics", "blue"))
+            graph_client.create_account(sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
             print(color("Account created successfully", "green"))
 
             print(color("Fetching relevant account information", "blue"))
             account_information = [acc for acc in graph_client.get_accounts()
-                                   if acc["aws_account_id"] == sub_account][0]
+                                   if acc["aws_account_id"] == sub_account[0]][0]
             sub_account_template_url = account_information["template_url"]
             ll_collection_template = account_information["collection_template_url"]
             print(color("Finished fetching information", "green"))
@@ -91,25 +91,25 @@ def main(environment, ll_username, ll_password, aws_profile_name):
             wait_for_cloudformation(sub_account_stack_id, cf)
 
             print(color("Waiting for the account to finish integrating with Lightlytics", "blue"))
-            account_status = graph_client.wait_for_account_connection(sub_account)
+            account_status = graph_client.wait_for_account_connection(sub_account[0])
             if account_status != "READY":
                 print(color(f"Account is in the state of {account_status}, integration failed", "red"))
                 continue
-            print(color(f"Account {sub_account} integrated successfully with Lightlytics", "green"))
+            print(color(f"Account {sub_account[0]} integrated successfully with Lightlytics", "green"))
 
             # Adding integrated account to finished dict
-            accounts_integrated[sub_account] = []
+            accounts_integrated[sub_account[0]] = []
 
             print(color("Getting active regions (Has EC2 instances)", "blue"))
             active_regions = get_active_regions(sub_account_session, regions)
             print(color(f"Active regions are: {active_regions}", "blue"))
 
             print(color("Updating regions in Lightlytics according to active regions", "blue"))
-            graph_client.edit_regions(sub_account, active_regions)
+            graph_client.edit_regions(sub_account[0], active_regions)
             print(color(f"Updated regions to {active_regions}", "green"))
 
             print(color("Waiting for the account to finish editing regions", "blue"))
-            account_status = graph_client.wait_for_account_connection(sub_account)
+            account_status = graph_client.wait_for_account_connection(sub_account[0])
             if account_status != "READY":
                 print(color(f"Account is in the state of {account_status}, integration failed", "red"))
                 continue
@@ -128,12 +128,12 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                 wait_for_cloudformation(collection_stack_id, region_client)
 
                 # Adding realtime to finished dict
-                accounts_integrated[sub_account].append(region)
+                accounts_integrated[sub_account[0]].append(region)
             print(color(f"Realtime enabled for {active_regions}", "green"))
 
         except Exception as e:
             # Print the error message
-            print(color(f"Error for sub_account {sub_account}: {e}", "red"))
+            print(color(f"Error for sub_account[0] {sub_account[0]}: {e}", "red"))
             continue
 
     print(color("Integration finished successfully!", "green"))
