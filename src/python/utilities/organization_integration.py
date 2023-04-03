@@ -87,7 +87,8 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                     realtime_regions = sub_account_information["realtime_regions"] or []
                     regions_to_integrate = [i for i in potential_regions if i not in realtime_regions]
                     if len(regions_to_integrate) > 0:
-                        print(color(f"Realtime is not enabled on all regions, adding support", "blue"))
+                        print(color(f"Realtime is not enabled on all regions, "
+                                    f"adding support for {regions_to_integrate}", "blue"))
                         accounts_integrated = deploy_collection_stack(
                             regions_to_integrate, sub_account_session, random_int, sub_account_information,
                             accounts_integrated, sub_account)
