@@ -172,9 +172,9 @@ def update_regions(graph_client, sub_account, active_regions):
     account_status = graph_client.wait_for_account_connection(sub_account[0])
     if account_status != "READY":
         print(color(f"Account is in the state of {account_status}, integration failed", "red"))
-        return True
+        return False
     print(color(f"Editing regions finished successfully", "green"))
-    return False
+    return True
 
 
 def deploy_collection_stack(
