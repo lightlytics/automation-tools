@@ -40,6 +40,8 @@ def wait_for_cloudformation(cft_id, cf_client, timeout=180):
         if status == 'CREATE_COMPLETE':
             print(colored(f'Stack deployed successfully after {dt_diff} seconds', "green"))
             break
+        elif status == 'ROLLBACK_IN_PROGRESS':
+            raise Exception(f"Stack {cft_id} failed")
         else:
             time.sleep(1)
     if dt_diff >= timeout:
