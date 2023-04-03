@@ -84,7 +84,7 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                     else:
                         print(color(f"Regions are the same", "green"))
                     print(color("Checking if realtime regions are functioning", "blue"))
-                    realtime_regions = sub_account_information["realtime_regions"] or []
+                    realtime_regions = [r["region_name"] for r in sub_account_information["realtime_regions"]] or []
                     regions_to_integrate = [i for i in potential_regions if i not in realtime_regions]
                     if len(regions_to_integrate) > 0:
                         print(color(f"Realtime is not enabled on all regions, "
