@@ -64,38 +64,56 @@ def main(environment, ll_username, ll_password, aws_profile_name):
             print(color("Session initialized successfully", "green"))
 
             print(color("Checking if integration already exists", "blue"))
-            if sub_account[0] in [acc["aws_account_id"] for acc in graph_client.get_accounts()]:
-                print(color("Account is already integrated, skipping", "yellow"))
-                continue
+            ll_integrated = False
+            try:
+                sub_account_information = \
+                    [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["aws_account_id"]][0]
+                if sub_account_information["status"] == "UNINITIALIZED":
+                    ll_integrated = True
+                    print(color(f"Account {sub_account[0]} is integrated but uninitialized, continuing", "blue"))
+                elif sub_account_information["status"] == "READY":
+                    accounts_integrated[sub_account[0]] = []
+                    print(color("Integration exists and in READY state", "green"))
+                    print(color("Checking if regions are updated", "blue"))
+                    current_regions = sub_account_information["aws_regions"]
+                    potential_regions = get_active_regions(sub_account_session, regions)
+                    if sorted(current_regions) != sorted(potential_regions):
+                        print(color(f"Regions are different, updating to {potential_regions}", "blue"))
+                        if not update_regions(graph_client, sub_account, potential_regions):
+                            continue
+                    else:
+                        print(color(f"Regions are the same", "green"))
+                    print(color("Checking if realtime regions are functioning", "blue"))
+                    realtime_regions = sub_account_information["realtime_regions"] or []
+                    regions_to_integrate = [i for i in potential_regions if i not in realtime_regions]
+                    if len(regions_to_integrate) > 0:
+                        print(color(f"Realtime is not enabled on all regions, adding support", "blue"))
+                        deploy_collection_stack(
+                            regions_to_integrate, sub_account_session, random_int, sub_account_information,
+                            accounts_integrated, sub_account)
+                    else:
+                        print(color(f"All regions are integrated to realtime", "green"))
+                    continue
+                else:
+                    raise Exception(f"Account is in {sub_account_information['status']} "
+                                    f"status at Lightlytics, remove it and try again")
+            except IndexError:
+                pass
 
-            print(color(f"Creating {sub_account[0]} account in Lightlytics", "blue"))
-            graph_client.create_account(sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
-            print(color("Account created successfully", "green"))
+            # If account is not already integrated to Lightlytics
+            if not ll_integrated:
+                print(color(f"Creating {sub_account[0]} account in Lightlytics", "blue"))
+                graph_client.create_account(
+                    sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
+                print(color("Account created successfully", "green"))
 
             print(color("Fetching relevant account information", "blue"))
             account_information = [acc for acc in graph_client.get_accounts()
                                    if acc["aws_account_id"] == sub_account[0]][0]
-            sub_account_template_url = account_information["template_url"]
-            ll_collection_template = account_information["collection_template_url"]
-            print(color("Finished fetching information", "green"))
 
-            # Initializing "cloudformation" boto client
-            cf = sub_account_session.client('cloudformation')
-
-            print(color("Creating the CFT stack using Boto", "blue"))
-            stack_creation_payload = create_stack_payload(f"LightlyticsStack-{random_int}", sub_account_template_url)
-            sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
-            print(color(f"{sub_account_stack_id} Created successfully", "green"))
-
-            print(color("Waiting for the stack to finish deploying successfully", "blue"))
-            wait_for_cloudformation(sub_account_stack_id, cf)
-
-            print(color("Waiting for the account to finish integrating with Lightlytics", "blue"))
-            account_status = graph_client.wait_for_account_connection(sub_account[0])
-            if account_status != "READY":
-                print(color(f"Account is in the state of {account_status}, integration failed", "red"))
+            # Deploying the initial integration stack
+            if not deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
                 continue
-            print(color(f"Account {sub_account[0]} integrated successfully with Lightlytics", "green"))
 
             # Adding integrated account to finished dict
             accounts_integrated[sub_account[0]] = []
@@ -104,40 +122,79 @@ def main(environment, ll_username, ll_password, aws_profile_name):
             active_regions = get_active_regions(sub_account_session, regions)
             print(color(f"Active regions are: {active_regions}", "blue"))
 
-            print(color("Updating regions in Lightlytics according to active regions", "blue"))
-            graph_client.edit_regions(sub_account[0], active_regions)
-            print(color(f"Updated regions to {active_regions}", "green"))
-
-            print(color("Waiting for the account to finish editing regions", "blue"))
-            account_status = graph_client.wait_for_account_connection(sub_account[0])
-            if account_status != "READY":
-                print(color(f"Account is in the state of {account_status}, integration failed", "red"))
+            # Updating the regions in Lightlytics and waiting
+            if not update_regions(graph_client, sub_account, active_regions):
                 continue
-            print(color(f"Editing regions finished successfully", "green"))
 
-            print(color("Adding collection CFT stack for realtime events for each region", color="blue"))
-            for region in active_regions:
-                print(color(f"Adding collection CFT stack for {region}", "blue"))
-                region_client = sub_account_session.client('cloudformation', region_name=region)
-                stack_creation_payload = create_stack_payload(
-                    f"LightlyticsStack-collection-{region}-{random_int}", ll_collection_template)
-                collection_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
-                print(color(f"Collection stack {collection_stack_id} deploying", "blue"))
-
-                print(color("Waiting for the stack to finish deploying successfully", "blue"))
-                wait_for_cloudformation(collection_stack_id, region_client)
-
-                # Adding realtime to finished dict
-                accounts_integrated[sub_account[0]].append(region)
-            print(color(f"Realtime enabled for {active_regions}", "green"))
+            # Deploying collections stacks for all regions
+            deploy_collection_stack(
+                active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account)
 
         except Exception as e:
             # Print the error message
-            print(color(f"Error for sub_account[0] {sub_account[0]}: {e}", "red"))
+            print(color(f"Error for sub_account {sub_account[0]}: {e}", "red"))
             continue
 
     print(color("Integration finished successfully!", "green"))
     pprint(accounts_integrated)
+
+
+def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
+    sub_account_template_url = account_information["template_url"]
+    print(color("Finished fetching information", "green"))
+
+    # Initializing "cloudformation" boto client
+    cf = sub_account_session.client('cloudformation')
+
+    print(color("Creating the CFT stack using Boto", "blue"))
+    stack_creation_payload = create_stack_payload(f"LightlyticsStack-{random_int}", sub_account_template_url)
+    sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
+    print(color(f"{sub_account_stack_id} Created successfully", "green"))
+
+    print(color("Waiting for the stack to finish deploying successfully", "blue"))
+    wait_for_cloudformation(sub_account_stack_id, cf)
+
+    print(color("Waiting for the account to finish integrating with Lightlytics", "blue"))
+    account_status = graph_client.wait_for_account_connection(sub_account[0])
+    if account_status != "READY":
+        print(color(f"Account is in the state of {account_status}, integration failed", "red"))
+        return False
+    print(color(f"Account {sub_account[0]} integrated successfully with Lightlytics", "green"))
+    return True
+
+
+def update_regions(graph_client, sub_account, active_regions):
+    print(color("Updating regions in Lightlytics according to active regions", "blue"))
+    graph_client.edit_regions(sub_account[0], active_regions)
+    print(color(f"Updated regions to {active_regions}", "green"))
+
+    print(color("Waiting for the account to finish editing regions", "blue"))
+    account_status = graph_client.wait_for_account_connection(sub_account[0])
+    if account_status != "READY":
+        print(color(f"Account is in the state of {account_status}, integration failed", "red"))
+        return True
+    print(color(f"Editing regions finished successfully", "green"))
+    return False
+
+
+def deploy_collection_stack(
+        active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account):
+    print(color("Adding collection CFT stack for realtime events for each region", color="blue"))
+    for region in active_regions:
+        print(color(f"Adding collection CFT stack for {region}", "blue"))
+        region_client = sub_account_session.client('cloudformation', region_name=region)
+        stack_creation_payload = create_stack_payload(
+            f"LightlyticsStack-collection-{region}-{random_int}",
+            account_information["collection_template_url"])
+        collection_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
+        print(color(f"Collection stack {collection_stack_id} deploying", "blue"))
+
+        print(color("Waiting for the stack to finish deploying successfully", "blue"))
+        wait_for_cloudformation(collection_stack_id, region_client)
+
+        # Adding realtime to finished dict
+        accounts_integrated[sub_account[0]].append(region)
+    print(color(f"Realtime enabled for {active_regions}", "green"))
 
 
 if __name__ == "__main__":
