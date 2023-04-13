@@ -6,6 +6,8 @@ import sys
 from pprint import pprint
 from termcolor import colored as color
 
+# Add the project root directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
@@ -84,8 +86,11 @@ def main(environment, ll_username, ll_password, aws_profile_name):
                     else:
                         print(color(f"Regions are the same", "green"))
                     print(color("Checking if realtime regions are functioning", "blue"))
-                    realtime_regions = [r["region_name"] for r in sub_account_information["realtime_regions"]] or []
-                    regions_to_integrate = [i for i in potential_regions if i not in realtime_regions]
+                    realtime_regions = sub_account_information["realtime_regions"]
+                    if realtime_regions is None:
+                        realtime_regions = []
+                    realtime_region_names = [r["region_name"] for r in realtime_regions]
+                    regions_to_integrate = [i for i in potential_regions if i not in realtime_region_names]
                     if len(regions_to_integrate) > 0:
                         print(color(f"Realtime is not enabled on all regions, "
                                     f"adding support for {regions_to_integrate}", "blue"))
