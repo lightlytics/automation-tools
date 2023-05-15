@@ -74,7 +74,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts):
             ll_integrated = False
             try:
                 sub_account_information = \
-                    [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["aws_account_id"]][0]
+                    [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]][0]
                 if sub_account_information["status"] == "UNINITIALIZED":
                     ll_integrated = True
                     print(color(f"Account {sub_account[0]} is integrated but uninitialized, continuing", "blue"))
@@ -120,7 +120,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts):
 
             print(color("Fetching relevant account information", "blue"))
             account_information = [acc for acc in graph_client.get_accounts()
-                                   if acc["aws_account_id"] == sub_account[0]][0]
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
 
             # Deploying the initial integration stack
             if not deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
