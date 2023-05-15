@@ -92,10 +92,11 @@ class GraphCommon(object):
             :returns (list) - Integrations in the environment.
         """
         operation = 'Accounts'
-        query = "query Accounts{accounts{_id account_type aws_account_id aws_regions display_name external_id status " \
-                "template_url collection_template_url realtime_regions{region_name template_version __typename}" \
-                "vpc_flow_logs{flow_logs_token should_collect_flow_logs __typename}lightlytics_collection_token " \
-                "stack_region account_aliases __typename}}"
+        query = "query Accounts{accounts{_id account_type cloud_account_id cloud_regions display_name " \
+                "external_id status template_url collection_template_url realtime_regions{region_name " \
+                "template_version __typename}vpc_flow_logs{flow_logs_token should_collect_flow_logs __typename} " \
+                "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
+                "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
         return self.graph_query(operation, {}, query)['data']['accounts']
 
     def create_account(self, account_id, regions_list, display_name=None):
@@ -107,8 +108,8 @@ class GraphCommon(object):
         """
         payload_operation = "CreateAccount"
         payload_vars = {"account": {"account_type": "AWS",
-                                    "aws_account_id": account_id,
-                                    "aws_regions": regions_list,
+                                    "cloud_account_id": account_id,
+                                    "cloud_regions": regions_list,
                                     "stack_region": regions_list[0]}}
         if display_name:
             payload_vars['account']["display_name"] = display_name
@@ -126,7 +127,7 @@ class GraphCommon(object):
             :param account_id (str) - Specific AWS account ID.
             :returns (dict)         - Account details.
         """
-        account = [a for a in self.get_accounts() if a['aws_account_id'] == account_id][0]
+        account = [a for a in self.get_accounts() if a['cloud_account_id'] == account_id][0]
         try:
             return account
         except IndexError:
@@ -138,7 +139,7 @@ class GraphCommon(object):
             :returns (str)          - Integration status.
         """
         accounts = self.get_accounts()
-        specific_account = next(account for account in accounts if account["aws_account_id"] == account_id)
+        specific_account = next(account for account in accounts if account["cloud_account_id"] == account_id)
         return specific_account["status"]
 
     def wait_for_account_connection(self, account, timeout=600):
@@ -169,9 +170,9 @@ class GraphCommon(object):
         """
         payload_operation = "updateAccount"
         payload_vars = {"id": self.get_specific_account(account_id)["_id"],
-                        "account": {"aws_regions": regions_list}}
+                        "account": {"cloud_regions": regions_list}}
         query = "mutation updateAccount($id: ID!, $account: AccountUpdateInput) {updateAccount(id: $id, account:" \
-                " $account) {_id display_name aws_regions template_url collection_template_url __typename }}"
+                " $account) {_id display_name cloud_regions template_url collection_template_url __typename }}"
         res = self.graph_query(payload_operation, payload_vars, query)
         if "errors" in res:
             raise Exception(f"Something else occurred, error: {res.text}")
@@ -186,7 +187,7 @@ class GraphCommon(object):
         payload_operation = "updateAccount"
         query = "mutation updateAccount($id: ID!, $account: AccountUpdateInput)" \
                 "{updateAccount(id: $id, account: $account)" \
-                "{_id display_name aws_regions template_url collection_template_url __typename}}"
+                "{_id display_name cloud_regions template_url collection_template_url __typename}}"
         payload_vars = {"id": self.get_specific_account(account_id)["_id"],
                         "account": {"display_name": display_name}}
         res = self.graph_query(payload_operation, payload_vars, query)
