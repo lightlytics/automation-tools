@@ -17,9 +17,11 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, aws_profile_name):
+def main(environment, ll_username, ll_password, aws_profile_name, accounts):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
+    if accounts:
+        accounts = accounts.replace(" ", "").split(",")
 
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com/graphql"
@@ -48,6 +50,9 @@ def main(environment, ll_username, ll_password, aws_profile_name):
 
     # Setting the dict for successfully integrated accounts
     accounts_integrated = {}
+
+    if accounts:
+        sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
 
     for sub_account in sub_accounts:
         print(color(f"Starting integration on {sub_account[0]}", color="blue"))
@@ -216,5 +221,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
         default="staging")
+    parser.add_argument(
+        "--accounts", help="Accounts list to iterate when creating the report (e.g '123123123123,321321321321')",
+        required=False)
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.aws_profile_name)
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
+         args.aws_profile_name, args.accounts)
