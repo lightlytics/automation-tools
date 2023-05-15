@@ -75,6 +75,18 @@ class GraphCommon(object):
         else:
             raise Exception(f"Could not get customer id, error: {res.text}")
 
+    def get_ws_id_by_name(self, ws_name):
+        """ Get Workspace ID by name.
+            :param ws_name (str)    - Workspace name.
+            :returns (str)          - Workspace ID.
+        """
+        workspaces = self.get_all_customer_ids(raw=True)
+        specific_ws = [ws for ws in workspaces if ws["display_name"] == ws_name]
+        try:
+            return specific_ws[0]["_id"]
+        except IndexError:
+            raise Exception("Can't find WS")
+
     def get_accounts(self):
         """ Get all accounts.
             :returns (list) - Integrations in the environment.
