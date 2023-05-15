@@ -166,17 +166,17 @@ class GraphCommon(object):
         return res["data"]["updateAccount"]
 
     def update_account_display_name(self, account_id, display_name):
-        """ Edit regions list.
+        """ Update a specific account display name.
             :param account_id (str)     - Specific AWS account ID.
             :param display_name (list)  - Display name to change to.
             :returns (dict)             - Account details.
         """
         payload_operation = "updateAccount"
-        payload_vars = {"id": self.get_specific_account(account_id)["_id"],
-                        "account": {"display_name": display_name}}
         query = "mutation updateAccount($id: ID!, $account: AccountUpdateInput)" \
                 "{updateAccount(id: $id, account: $account)" \
                 "{_id display_name aws_regions template_url collection_template_url __typename}}"
+        payload_vars = {"id": self.get_specific_account(account_id)["_id"],
+                        "account": {"display_name": display_name}}
         res = self.graph_query(payload_operation, payload_vars, query)
         if "errors" in res:
             raise Exception(f"Something else occurred, error: {res.text}")
