@@ -203,6 +203,42 @@ class GraphCommon(object):
         query = "query Compliances{compliance{results{compliance __typename}__typename}}"
         return [c['compliance'] for c in self.graph_query(operation, {}, query)['data']['compliance']['results']]
 
+    def get_all_rules(self):
+        """ Get all "standards" rules.
+            :returns (list) - Rules.
+        """
+        operation = 'RulesQuery'
+        query = "query RulesQuery($filters: RuleFilters, $eventId: String, $resourceId: String, " \
+                "$isRemediation: Boolean, $simulation: Boolean){rules(filters: $filters event_id: $eventId " \
+                "resource_id: $resourceId is_remediation: $isRemediation is_simulation: $simulation){" \
+                "total_count results{id name creation_date created_by category severity description labels " \
+                "compliance status state rule_type fail_simulation exclusions_count __typename}__typename}}"
+        return self.graph_query(operation, {}, query)['data']['rules']['results']
+
+    def get_rules_by_compliance(self, compliance):
+        """ Get all "standards" rules by compliance.
+            :returns (list) - Compliance rules.
+        """
+        return [r for r in self.get_all_rules() if compliance in r['compliance']]
+
+    def get_rule_violations(self, rule_id, filter_path_violations=False):
+        """ Get all rule violations.
+            :returns (list) - Rule violations.
+        """
+        operation = 'RuleViolations'
+        query = "query RuleViolations($filters: RuleViolationFilters, $filter_inventory: " \
+                "RuleViolationFilterInventory, $skip: Int, $limit: Int){ruleViolations(filters: $filters " \
+                "filter_inventory: $filter_inventory skip: $skip limit: $limit){total_count results{id rule_id " \
+                "violation_type predicted_monthly_cost ... on RuleResourceViolation{resource_id __typename}" \
+                "... on RulePathViolation{violation_ids path_id path{id united_resources{id __typename}__typename}" \
+                "destinations{id __typename}port_ranges{start end protocol __typename}actions __typename}__typename}" \
+                "__typename}}"
+        variables = {"filters": {"rule_id": rule_id}, "filter_inventory": {}, "skip": 0, "limit": 0}
+        violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
+        if filter_path_violations:
+            return [v for v in violations if v["__typename"] != "RulePathViolation"]
+        return violations
+
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
         """ Create payload.
