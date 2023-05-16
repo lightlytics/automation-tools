@@ -195,6 +195,14 @@ class GraphCommon(object):
             raise Exception(f"Something else occurred, error: {res.text}")
         return res["data"]["updateAccount"]
 
+    def get_compliance_standards(self):
+        """ Get all compliance standards.
+            :returns (list) - Available compliance standards.
+        """
+        operation = 'Compliances'
+        query = "query Compliances{compliance{results{compliance __typename}__typename}}"
+        return [c['compliance'] for c in self.graph_query(operation, {}, query)['data']['compliance']['results']]
+
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
         """ Create payload.

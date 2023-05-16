@@ -3,3 +3,4 @@ requests~=2.25.0
 botocore~=1.26.10
 tqdm~=4.64.1
 termcolor~=1.1.0
+reportlab~=3.6.8
