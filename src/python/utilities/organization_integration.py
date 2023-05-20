@@ -1,6 +1,5 @@
 import argparse
 import boto3
-import concurrent.futures
 import os
 import random
 import sys
@@ -54,7 +53,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
     if accounts:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
 
-    print(color(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}"))
+    print(color(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}", "blue"))
 
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
@@ -121,7 +120,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
                 if len(regions_to_integrate) > 0:
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
-                    accounts_integrated = deploy_collection_stack(
+                    accounts_integrated = deploy_all_collection_stacks(
                         regions_to_integrate, sub_account_session, random_int, sub_account_information,
                         accounts_integrated, sub_account)
                 else:
@@ -160,7 +159,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
             raise Exception(f"Account: {sub_account[0]} | Something went wrong with regions update")
 
         # Deploying collections stacks for all regions
-        accounts_integrated = deploy_collection_stack(
+        accounts_integrated = deploy_all_collection_stacks(
             active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account)
 
         return accounts_integrated
@@ -168,6 +167,21 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
     except Exception as e:
         # Print the error message
         raise Exception(f"Account: {sub_account[0]} | Something went wrong: {e}")
+
+
+def update_regions(graph_client, sub_account, active_regions):
+    print(color(f"Account: {sub_account[0]} | Updating regions in Lightlytics according to active regions", "blue"))
+    graph_client.edit_regions(sub_account[0], active_regions)
+    print(color(f"Account: {sub_account[0]} | Updated regions to {active_regions}", "green"))
+
+    print(color(f"Account: {sub_account[0]} | Waiting for the account to finish editing regions", "blue"))
+    account_status = graph_client.wait_for_account_connection(sub_account[0])
+    if account_status != "READY":
+        print(color(
+            f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
+        return False
+    print(color(f"Account: {sub_account[0]} | Editing regions finished successfully", "green"))
+    return True
 
 
 if __name__ == "__main__":
