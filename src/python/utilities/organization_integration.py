@@ -3,7 +3,6 @@ import boto3
 import os
 import random
 import sys
-from pprint import pprint
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -47,9 +46,6 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     print(color(f"Found {len(sub_accounts)} accounts", "blue"))
 
-    # Setting the dict for successfully integrated accounts
-    accounts_integrated = {}
-
     if accounts:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
 
@@ -60,21 +56,18 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
-                sub_account, sts_client, graph_client, accounts_integrated, regions, random_int
+                sub_account, sts_client, graph_client, regions, random_int
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
     else:
         for sub_account in sub_accounts:
-            accounts_integrated = integrate_sub_account(
-                sub_account, sts_client, graph_client, accounts_integrated, regions, random_int)
+            integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int)
 
     print(color("Integration finished successfully!", "green"))
-    if not parallel:
-        pprint(accounts_integrated)
 
 
-def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integrated, regions, random_int):
+def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
@@ -99,7 +92,6 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
                 ll_integrated = True
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
             elif sub_account_information["status"] == "READY":
-                accounts_integrated[sub_account[0]] = []
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
@@ -120,9 +112,8 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
                 if len(regions_to_integrate) > 0:
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
-                    accounts_integrated = deploy_all_collection_stacks(
-                        regions_to_integrate, sub_account_session, random_int, sub_account_information,
-                        accounts_integrated, sub_account)
+                    deploy_all_collection_stacks(
+                        regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account)
                 else:
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
                 return
@@ -147,9 +138,6 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
         if not deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
             raise Exception(f"Account: {sub_account[0]} | Something went wrong with init stack deployment")
 
-        # Adding integrated account to finished dict
-        accounts_integrated[sub_account[0]] = []
-
         print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
         active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
@@ -159,10 +147,10 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
             raise Exception(f"Account: {sub_account[0]} | Something went wrong with regions update")
 
         # Deploying collections stacks for all regions
-        accounts_integrated = deploy_all_collection_stacks(
-            active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account)
+        deploy_all_collection_stacks(
+            active_regions, sub_account_session, random_int, account_information, sub_account)
 
-        return accounts_integrated
+        return
 
     except Exception as e:
         # Print the error message

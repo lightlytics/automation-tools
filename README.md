@@ -22,6 +22,6 @@ Script execution with the AWS profile flag:
 ```python src/python/utilities/organization_integration.py --environment_sub_domain <ENV_NAME> --environment_user_name <ENV_USERNAME> --environment_password <ENV_PASSWORD> --aws_profile_name <AWS_PROFILE_NAME>```
 
 ## Prerequisites
-- Python 3.7 or higher
+- Python 3.9 or higher
 - pip
 - All dependencies listed in the `requirements.txt` file

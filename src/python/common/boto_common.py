@@ -80,9 +80,9 @@ def get_active_regions(sub_account_session, regions):
 
 
 def deploy_all_collection_stacks(
-        active_regions, sub_account_session, random_int, account_information, accounts_integrated, sub_account):
+        active_regions, sub_account_session, random_int, account_information, sub_account):
     print(color(
-        f"Account: {sub_account[0]} | Adding collection CFT stack for realtime events for each region in parallel"
+        f"Account: {sub_account[0]} | Adding collection CFT stack for realtime events for each region in parallel "
         f"(Max 8 workers)", color="blue"))
     # List to hold the concurrent futures
     futures = []
@@ -90,17 +90,16 @@ def deploy_all_collection_stacks(
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         # Iterate over active_regions and submit each task to the executor
         for region in active_regions:
-            future = executor.submit(deploy_collection_stack, accounts_integrated, account_information,
+            future = executor.submit(deploy_collection_stack, account_information,
                                      sub_account_session, sub_account, region, random_int)
             futures.append(future)
     # Wait for all the tasks to complete
     concurrent.futures.wait(futures)
     print(color(f"Account: {sub_account[0]} | Realtime enabled in regions: {active_regions}", "green"))
-    return accounts_integrated
+    return
 
 
-def deploy_collection_stack(
-        accounts_integrated, account_information, sub_account_session, sub_account, region, random_int):
+def deploy_collection_stack(account_information, sub_account_session, sub_account, region, random_int):
     # Existing code inside the for loop
     print(color(f"Account: {sub_account[0]} | Adding collection CFT stack for {region}", "blue"))
     region_client = sub_account_session.client('cloudformation', region_name=region)
@@ -112,9 +111,6 @@ def deploy_collection_stack(
 
     print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
     wait_for_cloudformation(sub_account, collection_stack_id, region_client)
-
-    # Adding realtime to finished dict
-    accounts_integrated[sub_account[0]].append(region)
 
 
 def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
