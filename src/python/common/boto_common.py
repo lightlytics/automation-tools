@@ -44,7 +44,9 @@ def wait_for_cloudformation(sub_account, cft_id, cf_client, timeout=240):
             print(color(f'Account: {sub_account[0]} | Stack deployed successfully after {dt_diff} seconds', "green"))
             break
         elif status == 'ROLLBACK_IN_PROGRESS':
-            raise Exception(f"Account: {sub_account[0]} | Stack {cft_id} failed")
+            err_msg = f"Account: {sub_account[0]} | Stack {cft_id} failed"
+            print(color(err_msg, "red"))
+            raise Exception(err_msg)
         else:
             time.sleep(1)
     if dt_diff >= timeout:

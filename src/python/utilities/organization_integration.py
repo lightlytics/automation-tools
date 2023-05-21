@@ -100,7 +100,9 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                     print(color(
                         f"Account: {sub_account[0]} | Regions are different, updating to {potential_regions}", "blue"))
                     if not update_regions(graph_client, sub_account, potential_regions):
-                        raise Exception(f"Account: {sub_account[0]} | Something went wrong with regions update")
+                        err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
+                        print(color(err_msg, "red"))
+                        raise Exception(err_msg)
                 else:
                     print(color(f"Account: {sub_account[0]} | Regions are the same", "green"))
                 print(color(f"Account: {sub_account[0]} | Checking if realtime regions are functioning", "blue"))
@@ -118,8 +120,10 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
                 return
             else:
-                raise Exception(f"Account: {sub_account[0]} | Account is in {sub_account_information['status']} "
-                                f"status at Lightlytics, remove it and try again")
+                err_msg = f"Account: {sub_account[0]} | Account is in {sub_account_information['status']} " \
+                          f"status at Lightlytics, remove it and try again"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg)
         except IndexError:
             pass
 
@@ -136,7 +140,9 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
         # Deploying the initial integration stack
         if not deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
-            raise Exception(f"Account: {sub_account[0]} | Something went wrong with init stack deployment")
+            err_msg = f"Account: {sub_account[0]} | Something went wrong with init stack deployment"
+            print(color(err_msg, "red"))
+            raise Exception(err_msg)
 
         print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
         active_regions = get_active_regions(sub_account_session, regions)
@@ -144,7 +150,9 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
         # Updating the regions in Lightlytics and waiting
         if not update_regions(graph_client, sub_account, active_regions):
-            raise Exception(f"Account: {sub_account[0]} | Something went wrong with regions update")
+            err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
+            print(color(err_msg, "red"))
+            raise Exception(err_msg)
 
         # Deploying collections stacks for all regions
         deploy_all_collection_stacks(
@@ -153,8 +161,9 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
         return
 
     except Exception as e:
-        # Print the error message
-        raise Exception(f"Account: {sub_account[0]} | Something went wrong: {e}")
+        err_msg = f"Account: {sub_account[0]} | Something went wrong: {e}"
+        print(color(err_msg, "red"))
+        raise Exception(err_msg)
 
 
 def update_regions(graph_client, sub_account, active_regions):
