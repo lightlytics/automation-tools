@@ -102,7 +102,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, accounts_integr
                 accounts_integrated[sub_account[0]] = []
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
-                current_regions = sub_account_information["aws_regions"]
+                current_regions = sub_account_information["cloud_regions"]
                 potential_regions = get_active_regions(sub_account_session, regions)
                 if sorted(current_regions) != sorted(potential_regions):
                     print(color(
