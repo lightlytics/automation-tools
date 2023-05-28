@@ -195,6 +195,19 @@ class GraphCommon(object):
             raise Exception(f"Something else occurred, error: {res.text}")
         return res["data"]["updateAccount"]
 
+    def get_resource_configuration_by_id(self, resource_id):
+        """ Get configuration details by resource's ID.
+            :param resource_id (str)    - Specific resource's ID.
+            :returns (dict)             - Configuration details.
+        """
+        operation = 'ResourceConfiguration'
+        query = "query ResourceConfiguration($id: ID, $timestamp: Timestamp){" \
+                "configuration(resource_id: $id, timestamp: $timestamp){raw translated impact_paths __typename}}"
+        res = self.graph_query(operation, {"id": resource_id}, query)
+        if 'errors' in res:
+            raise Exception(f'Something went wrong, result: {res}')
+        return res['data']['configuration']['translated']
+
     def get_compliance_standards(self):
         """ Get all compliance standards.
             :returns (list) - Available compliance standards.
