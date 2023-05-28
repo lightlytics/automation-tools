@@ -208,6 +208,28 @@ class GraphCommon(object):
             raise Exception(f'Something went wrong, result: {res}')
         return res['data']['configuration']['translated']
 
+    def get_resource_parents_by_id(self, resource_id):
+        """ Get parent by resource's ID.
+            :param resource_id (str)    - Specific resource's ID.
+            :returns (list)             - Resource parents.
+        """
+        operation = 'ResourceQuery'
+        query = "query ResourceQuery($resource_id: ID, $simulation_timestamp: Timestamp){" \
+                "resource(resource_id: $resource_id simulation_timestamp: $simulation_timestamp return_deleted: true)" \
+                "{parents}}"
+        return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['parents']
+
+    def get_resource_cloud_account_id(self, resource_id):
+        """ Get resource account ID.
+            :param resource_id (str)    - Specific resource's ID.
+            :returns (list)             - Resource account.
+        """
+        parent = self.get_resource_parents_by_id(resource_id)[0]
+        if parent == "AWS":
+            return resource_id
+        else:
+            return self.get_resource_cloud_account_id(parent)
+
     def get_compliance_standards(self):
         """ Get all compliance standards.
             :returns (list) - Available compliance standards.
