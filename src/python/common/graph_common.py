@@ -228,11 +228,11 @@ class GraphCommon(object):
         operation = 'RuleViolations'
         query = "query RuleViolations($filters: RuleViolationFilters, $filter_inventory: " \
                 "RuleViolationFilterInventory, $skip: Int, $limit: Int){ruleViolations(filters: $filters " \
-                "filter_inventory: $filter_inventory skip: $skip limit: $limit){total_count results{id rule_id " \
-                "violation_type predicted_monthly_cost ... on RuleResourceViolation{resource_id __typename}" \
-                "... on RulePathViolation{violation_ids path_id path{id united_resources{id __typename}__typename}" \
-                "destinations{id __typename}port_ranges{start end protocol __typename}actions __typename}__typename}" \
-                "__typename}}"
+                "filter_inventory: $filter_inventory skip: $skip limit: $limit){total_count results{id values{ " \
+                "rule_id violation_type predicted_monthly_cost ... on RuleResourceViolation{resource_id __typename} " \
+                "... on RulePathViolation{id violation_ids path_id path{id united_resources{id __typename} " \
+                "__typename} destinations{id __typename}port_ranges{start end protocol __typename} actions " \
+                "__typename}__typename}__typename}__typename}}"
         variables = {"filters": {"rule_id": rule_id}, "filter_inventory": {}, "skip": 0, "limit": 0}
         violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
         if filter_path_violations:
