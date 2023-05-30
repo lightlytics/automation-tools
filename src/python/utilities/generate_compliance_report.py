@@ -4,7 +4,7 @@ import os
 import sys
 
 from datetime import date
-from pprint import pprint
+from pdf_tools import PdfFile
 from urllib.parse import quote_plus
 
 # Add the project root directory to the Python path
@@ -94,8 +94,6 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
             report_details["total_rules_violated"] += 1
             print(color(f"Finished generating report for rule '{rule['name']}'!", "green"))
 
-    pprint(report_details)
-
     print(color("Getting accounts list from the workspace", "blue"))
     ws_accounts = graph_client.get_accounts()
     print(color(f"Accounts in the selected workspace: {[a['cloud_account_id'] for a in ws_accounts]}", "green"))
@@ -104,6 +102,14 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     if accounts:
         ws_accounts = [a for a in ws_accounts if a['cloud_account_id'] in accounts]
         print(color(f"Accounts included in the report: {[a['cloud_account_id'] for a in ws_accounts]}", "blue"))
+
+    # Create the PDF report
+    pdf_file_name = f"{environment.upper()} {compliance}{f' {label}' if label else ''} Compliance report.pdf"
+    pdf_file_title = f"{environment.upper()} - {compliance}{f' (Label: {label})' if label else ''} Compliance Report"
+    pdf = PdfFile(pdf_file_name, date.today().strftime("%d/%m/%Y"))
+    pdf.create_front_page(pdf_file_title)
+    pdf.create_new_page()
+    pdf.save_pdf()
 
 
 if __name__ == "__main__":
