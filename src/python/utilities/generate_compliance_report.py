@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import os
 import sys
 
@@ -16,7 +17,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name, compliance, accounts):
+def main(environment, ll_username, ll_password, ws_name, compliance, accounts, label):
     # Setting up variables
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
@@ -39,16 +40,33 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts):
 
     print(color(f"Getting all compliance rules", "blue"))
     compliance_rules = graph_client.get_rules_by_compliance(compliance)
-    print(color("Got compliance rules successfully!", "green"))
+    compliance_rules_count = len(compliance_rules)
+    print(color(f"Found {compliance_rules_count} compliance rules!", "green"))
+
+    if label:
+        print(color(f"Verifying that this label exist: '{label}'", "blue"))
+        all_labels = list(set(itertools.chain.from_iterable([c["labels"] for c in compliance_rules])))
+        if label not in all_labels:
+            err_msg = f"Can't find label: '{label}'"
+            print(color(err_msg, "red"))
+            print(color(f"Available labels: {all_labels}", "blue"))
+            raise Exception(err_msg)
+        else:
+            print(color(f"Filtering rules using this label: '{label}'", "blue"))
+            compliance_rules = [c for c in compliance_rules if label in c["labels"]]
+            compliance_rules_count = len(compliance_rules)
+            print(color(f"There are {compliance_rules_count} compliance rules matching the label '{label}'", "green"))
 
     report_details = {
-        "name": f"{environment.upper()} - {compliance.upper()} compliance report",
+        "name": f"{environment.upper()} - {compliance.upper()}"
+                f"{f' (Label: {label})' if label else ''} Compliance Report",
         "generation_date": date.today().strftime("%d/%m/%Y"),
-        "total_rules": len(compliance_rules),
+        "total_rules": compliance_rules_count,
         "total_rules_violated": 0,
         "total_violations": 0
     }
 
+    print(color(f"Getting violation for each rule", "blue"))
     for rule in compliance_rules:
         rule["violations"] = graph_client.get_rule_violations(rule["id"], filter_path_violations=True)
         violations_count = len(rule["violations"])
@@ -83,6 +101,8 @@ if __name__ == "__main__":
         "--compliance", help="The report will be generated for this compliance (Case Sensitive)", required=True)
     parser.add_argument(
         "--accounts", help="Accounts list to iterate when creating the report", required=False)
+    parser.add_argument(
+        "--label", help="Filter compliance rules by using a label", required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.compliance, args.accounts)
+         args.ws_name, args.compliance, args.accounts, args.label)
