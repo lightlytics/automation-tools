@@ -5,6 +5,7 @@ import sys
 
 from datetime import date
 from pprint import pprint
+from urllib.parse import quote_plus
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -23,11 +24,11 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
         accounts = accounts.replace(" ", "").split(",")
 
     print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com/graphql"
-
-    graph_client = GraphCommon(ll_url, ll_username, ll_password)
+    ll_url = f"https://{environment}.lightlytics.com"
+    ll_graph_url = f"{ll_url}/graphql"
+    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
     ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client = GraphCommon(ll_url, ll_username, ll_password, customer_id=ws_id)
+    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, customer_id=ws_id)
     print(color("Logged in successfully!", "green"))
 
     print(color(f"Verifying that '{compliance}' compliance standard exist", "blue"))
@@ -58,21 +59,40 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
             print(color(f"There are {compliance_rules_count} compliance rules matching the label '{label}'", "green"))
 
     report_details = {
-        "name": f"{environment.upper()} - {compliance.upper()}"
-                f"{f' (Label: {label})' if label else ''} Compliance Report",
+        "environment_name": environment.upper(),
+        "environment_workspace": ws_name,
+        "compliance_name": compliance.upper(),
+        "compliance_label": label,
         "generation_date": date.today().strftime("%d/%m/%Y"),
         "total_rules": compliance_rules_count,
         "total_rules_violated": 0,
-        "total_violations": 0
+        "total_violations": 0,
+        "violated_rules": []
     }
 
-    print(color(f"Getting violation for each rule", "blue"))
+    print(color(f"Getting violations for each rule", "blue"))
     for rule in compliance_rules:
         rule["violations"] = graph_client.get_rule_violations(rule["id"], filter_path_violations=True)
         violations_count = len(rule["violations"])
         report_details["total_violations"] += violations_count
         if violations_count > 0:
+            print(color(f"Generating report for rule '{rule['name']}'", "blue"))
+            print(color(f"Adding report for {violations_count} violations", "blue"))
+            rule_details = {
+                "name": rule["name"],
+                "violated_resources": []
+            }
+            for violation in rule["violations"]:
+                encoded_query_url = quote_plus("i[resourceId]") + "=" + quote_plus(violation['id'])
+                violation_details = {
+                    "id": violation["id"],
+                    "url": f"{ll_url}/w/{ws_id}/discovery?{encoded_query_url}",
+                    "account": graph_client.get_resource_cloud_account_id(violation["id"])
+                }
+                rule_details["violated_resources"].append(violation_details)
+            report_details["violated_rules"].append(rule_details)
             report_details["total_rules_violated"] += 1
+            print(color(f"Finished generating report for rule '{rule['name']}'!", "green"))
 
     pprint(report_details)
 
