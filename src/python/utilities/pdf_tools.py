@@ -2,12 +2,19 @@ import os
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph
+from reportlab.lib import colors
 
 
 class PdfFile(object):
-    def __init__(self, filename, date):
+    def __init__(self, filename, date, text):
         self.date = date
         self.canvas = canvas.Canvas(filename, pagesize=letter)
+        self.add_default_page_design()
+        self.create_front_page(text)
+
+    def add_default_page_design(self):
         self.canvas.setFillColor("#ebe4e2")
         self.canvas.rect(0, 0, letter[0], letter[1], fill=True, stroke=False)
         self.create_footer()
@@ -20,33 +27,34 @@ class PdfFile(object):
         self.add_central_image(image_path)
         self.create_main_text(text)
 
-    def create_new_page(self):
+    def create_new_rule_page(self, violated_rule, rule_number, account_details):
         self.canvas.showPage()
-        self.canvas.setFillColor("#ebe4e2")
-        self.canvas.rect(0, 0, letter[0], letter[1], fill=True, stroke=False)
-        self.create_footer()
-        self.add_top_right_date()
-        logo_path = os.path.join("report_assets", "logo1.png")
-        self.add_top_left_logo(logo_path)
+        self.add_default_page_design()
+        self.create_rule_headline(f'{rule_number}. {violated_rule["name"]}')
 
-    def add_central_image(self, image_path):
-        image_width = 550
-        image_height = 300
-        image_x = (letter[0] - image_width) / 2
-        image_y = (letter[1] - image_height) / 2 - 80
-        self.canvas.drawImage(image_path, image_x, image_y, width=image_width, height=image_height)
+        # Draw "Account details" text
+        self.canvas.setFont("Helvetica-Bold", 16)
+        self.canvas.setFillColor("#000000")
+        account_text = f"Account: {account_details[0]} ({account_details[1]})"
+        self.canvas.drawString(letter[0] / 2 - 260, letter[1] - 190, account_text)
 
-    def add_top_left_logo(self, logo_path):
-        # Add logo image at the top left of the page
-        logo_width = 150
-        logo_height = 50
-        logo_x = 20
-        logo_y = letter[1] - logo_height - 20
-        self.canvas.drawImage(logo_path, logo_x, logo_y, width=logo_width, height=logo_height)
+        # Draw "violated resources" text
+        self.canvas.setFont("Helvetica", 16)
+        self.canvas.setFillColor("#000000")
+        self.canvas.drawString(letter[0] / 2 - 260, letter[1] - 220, "Violated resources:")
+
+        self.create_violated_resources_list(violated_rule, account_details[0])
+
+    def create_violated_resources_list(self, violated_rule, account_id):
+        for i, resource in enumerate(violated_rule["violated_resources"][account_id]):
+            # TODO - FIGURE OUT THE LINKS
+            resource_link_url = resource["url"]
+            resource_link_str = f"* [{resource['id']}]({resource_link_url})"
+            self.canvas.drawString(letter[0] / 2 - 260, (letter[1] - 240) - (i * 20), resource_link_str)
 
     def create_main_text(self, main_text):
         # Set main text properties
-        bold_font = "Helvetica"
+        font = "Helvetica"
         main_text_box_width = 400
         main_text_box_height = 100
         main_text_box_x = (letter[0] - main_text_box_width) / 2
@@ -58,21 +66,40 @@ class PdfFile(object):
             main_text_box_x, main_text_box_y, main_text_box_width, main_text_box_height, fill=False, stroke=False)
 
         # Set main text properties
-        self.canvas.setFont(bold_font, main_text_size)
+        self.canvas.setFont(font, main_text_size)
         self.canvas.setFillColor("#000000")  # Black color
 
+        self.wrap_text(
+            main_text, main_text_size, main_text_box_width,
+            main_text_box_height, main_text_box_x, main_text_box_y, font)
+
+    def create_rule_headline(self, text):
+        # Set text properties
+        text_size = 18
+        font = "Helvetica-Bold"
+        self.canvas.setFillColor("#000000")
+        self.canvas.setFont(font, text_size)
+
+        # Draw text
+        text_x = letter[0] / 2 - 200
+        text_y = letter[1] - 230
+
+        self.wrap_text(
+            text, text_size, 400, 200, text_x, text_y, font)
+
+    def wrap_text(self, text, text_size, text_box_width, text_box_height, text_box_x, text_box_y, font):
         # Wrap the text within the defined rectangle
-        wrapped_text = simpleSplit(main_text, "Helvetica", main_text_size, main_text_box_width)
+        wrapped_text = simpleSplit(text, "Helvetica", text_size, text_box_width)
 
         # Calculate the vertical offset for centered positioning within the text box
-        line_height = main_text_size * 1.2
-        vertical_offset = (main_text_box_height - (len(wrapped_text) * line_height)) / 2
+        line_height = text_size * 1.2
+        vertical_offset = (text_box_height - (len(wrapped_text) * line_height)) / 2
 
         # Draw the wrapped text within the text box
         for index, line in enumerate(wrapped_text):
-            line_width = self.canvas.stringWidth(line, bold_font, main_text_size)
-            line_x = main_text_box_x + (main_text_box_width - line_width) / 2
-            line_y = main_text_box_y + main_text_box_height - vertical_offset - ((index + 1) * line_height)
+            line_width = self.canvas.stringWidth(line, font, text_size)
+            line_x = text_box_x + (text_box_width - line_width) / 2
+            line_y = text_box_y + text_box_height - vertical_offset - ((index + 1) * line_height)
             self.canvas.drawString(line_x, line_y, line)
 
     def create_footer(self):
@@ -120,6 +147,21 @@ class PdfFile(object):
         text_x = top_right_text_box_x + (top_right_text_box_width - text_width) / 2
         text_y = top_right_text_box_y + (top_right_text_box_height - 12) / 2
         self.canvas.drawString(text_x, text_y, top_right_text)
+
+    def add_central_image(self, image_path):
+        image_width = 550
+        image_height = 300
+        image_x = (letter[0] - image_width) / 2
+        image_y = (letter[1] - image_height) / 2 - 80
+        self.canvas.drawImage(image_path, image_x, image_y, width=image_width, height=image_height)
+
+    def add_top_left_logo(self, logo_path):
+        # Add logo image at the top left of the page
+        logo_width = 150
+        logo_height = 50
+        logo_x = 20
+        logo_y = letter[1] - logo_height - 20
+        self.canvas.drawImage(logo_path, logo_x, logo_y, width=logo_width, height=logo_height)
 
     def save_pdf(self):
         self.canvas.save()
