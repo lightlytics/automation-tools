@@ -4,7 +4,7 @@ import os
 import sys
 
 from datetime import date
-from pdf_tools import PdfFile
+from src.python.common.pdf_tools import PdfFile
 from urllib.parse import quote_plus
 
 # Add the project root directory to the Python path

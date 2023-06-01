@@ -2,13 +2,11 @@ import os
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph
-from reportlab.lib import colors
 
 
 class PdfFile(object):
     def __init__(self, filename, date, text):
+        self.dir_path = os.path.dirname(os.path.realpath(__file__))
         self.date = date
         self.canvas = canvas.Canvas(filename, pagesize=letter)
         self.add_default_page_design()
@@ -19,11 +17,11 @@ class PdfFile(object):
         self.canvas.rect(0, 0, letter[0], letter[1], fill=True, stroke=False)
         self.create_footer()
         self.add_top_right_date()
-        logo_path = os.path.join("report_assets", "logo1.png")
+        logo_path = os.path.join(self.dir_path, "report_assets", "logo1.png")
         self.add_top_left_logo(logo_path)
 
     def create_front_page(self, text):
-        image_path = os.path.join("report_assets", "asset1.png")
+        image_path = os.path.join(self.dir_path, "report_assets", "asset1.png")
         self.add_central_image(image_path)
         self.create_main_text(text)
 
