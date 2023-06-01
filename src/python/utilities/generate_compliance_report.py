@@ -4,7 +4,6 @@ import os
 import sys
 
 from datetime import date
-from src.python.common.pdf_tools import PdfFile
 from urllib.parse import quote_plus
 
 # Add the project root directory to the Python path
@@ -12,10 +11,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 try:
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
+    from src.python.common.pdf_tools import PdfFile
 except ModuleNotFoundError:
     sys.path.append("../../..")
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
+    from src.python.common.pdf_tools import PdfFile
 
 
 def main(environment, ll_username, ll_password, ws_name, compliance, accounts, label):

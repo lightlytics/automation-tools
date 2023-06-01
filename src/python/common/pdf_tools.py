@@ -31,13 +31,13 @@ class PdfFile(object):
         self.create_rule_headline(f'{rule_number}. {violated_rule["name"]}')
 
         # Draw "Account details" text
-        self.canvas.setFont("Helvetica-Bold", 16)
+        self.canvas.setFont("Helvetica-Bold", 14)
         self.canvas.setFillColor("#000000")
         account_text = f"Account: {account_details[0]} ({account_details[1]})"
         self.canvas.drawString(letter[0] / 2 - 260, letter[1] - 190, account_text)
 
         # Draw "violated resources" text
-        self.canvas.setFont("Helvetica", 16)
+        self.canvas.setFont("Helvetica", 14)
         self.canvas.setFillColor("#000000")
         self.canvas.drawString(letter[0] / 2 - 260, letter[1] - 220, "Violated resources:")
 
@@ -45,10 +45,7 @@ class PdfFile(object):
 
     def create_violated_resources_list(self, violated_rule, account_id):
         for i, resource in enumerate(violated_rule["violated_resources"][account_id]):
-            # TODO - FIGURE OUT THE LINKS
-            resource_link_url = resource["url"]
-            resource_link_str = f"* [{resource['id']}]({resource_link_url})"
-            self.canvas.drawString(letter[0] / 2 - 260, (letter[1] - 240) - (i * 20), resource_link_str)
+            self.canvas.drawString(letter[0] / 2 - 260, (letter[1] - 240) - (i * 20), "* " + resource["id"])
 
     def create_main_text(self, main_text):
         # Set main text properties
@@ -57,7 +54,7 @@ class PdfFile(object):
         main_text_box_height = 100
         main_text_box_x = (letter[0] - main_text_box_width) / 2
         main_text_box_y = letter[1] - 230
-        main_text_size = 40
+        main_text_size = 36
 
         # Draw main text box
         self.canvas.rect(
@@ -73,7 +70,7 @@ class PdfFile(object):
 
     def create_rule_headline(self, text):
         # Set text properties
-        text_size = 18
+        text_size = 16
         font = "Helvetica-Bold"
         self.canvas.setFillColor("#000000")
         self.canvas.setFont(font, text_size)
@@ -102,10 +99,10 @@ class PdfFile(object):
 
     def create_footer(self):
         # Set footer properties
-        footer_height = letter[1] * 0.07
+        footer_height = letter[1] * 0.06
         footer_color = "#000000"
         footer_text_color = "#FFFFFF"
-        footer_text_size = 20
+        footer_text_size = 18
 
         # Draw footer rectangle
         self.canvas.setFillColor(footer_color)
@@ -138,7 +135,7 @@ class PdfFile(object):
 
         # Set top right text properties
         self.canvas.setFillColor("#000000")  # White color for the text
-        self.canvas.setFont("Helvetica", 20)  # Font properties
+        self.canvas.setFont("Helvetica", 16)  # Font properties
 
         # Draw top right text centered
         text_width = self.canvas.stringWidth(top_right_text, "Helvetica", 12)
