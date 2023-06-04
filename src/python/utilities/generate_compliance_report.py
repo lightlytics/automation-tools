@@ -75,6 +75,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     for rule in compliance_rules:
         rule["violations"] = graph_client.get_rule_violations(rule["id"], filter_path_violations=True)
         violations_count = len(rule["violations"])
+        rule["metadata"] = graph_client.get_rule_metadata(rule["id"])
         report_details["total_violations"] += violations_count
         if violations_count > 0:
             print(color(f"Generating report for rule '{rule['name']}'", "blue"))
@@ -98,9 +99,29 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
                 for future in concurrent.futures.as_completed(futures):
                     violation_account, violation_details = future.result()
                     try:
-                        rule_details["violated_resources"][violation_account].append(violation_details)
+                        rule_details["violated_resources"][violation_account]["resource_ids"].append(violation_details)
                     except KeyError:
-                        rule_details["violated_resources"][violation_account] = [violation_details]
+                        try:
+                            if rule["metadata"]["resource_predicate"]:
+                                resource_type = rule["metadata"]["resource_predicate"]["resource_type"]
+                                rule_details["resource_type"] = resource_type
+                            else:
+                                resource_type = rule["metadata"]["path_source_predicate"]["resource_type"]
+                                rule_details["resource_type"] = resource_type
+                            rule_details["violated_resources"][violation_account] = {
+                                "resource_ids": [violation_details],
+                                "total_resources": graph_client.get_resources_type_count_by_account(
+                                    resource_type, violation_account)
+                            }
+                        except IndexError:
+                            resource_type = rule["metadata"]["path_destination_predicate"]["resource_type"] or \
+                                            rule["metadata"]["path_intermediate_predicate"]["resource_type"]
+                            rule_details["resource_type"] = resource_type
+                            rule_details["violated_resources"][violation_account] = {
+                                "resource_ids": [violation_details],
+                                "total_resources": graph_client.get_resources_type_count_by_account(
+                                    resource_type, violation_account)
+                            }
 
             report_details["violated_rules"].append(rule_details)
             report_details["total_rules_violated"] += 1
@@ -114,20 +135,6 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     if accounts:
         ws_accounts = [a for a in ws_accounts if a['cloud_account_id'] in accounts]
         print(color(f"Accounts included in the report: {[a['cloud_account_id'] for a in ws_accounts]}", "blue"))
-
-    # Create the PDF report
-    pdf_file_name = f"{environment.upper()} {compliance}{f' {label}' if label else ''} Compliance report.pdf"
-    pdf_file_title = f"{environment.upper()} - {compliance}{f' (Label: {label})' if label else ''} Compliance Report"
-    pdf = PdfFile(pdf_file_name, date.today().strftime("%d/%m/%Y"), pdf_file_title)
-
-    for i, violated_rule in enumerate(report_details["violated_rules"]):
-        rule_number = i + 1
-        for account in violated_rule["violated_resources"].keys():
-            account_display_name = [a["display_name"] for a in ws_accounts if a['cloud_account_id'] == account][0]
-            account_details = (account, account_display_name)
-            pdf.create_new_rule_page(violated_rule, rule_number, account_details)
-
-    pdf.save_pdf()
 
 
 def process_violation(violation, graph_client, ll_url, ws_id):
