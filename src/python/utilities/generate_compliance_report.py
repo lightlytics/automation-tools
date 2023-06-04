@@ -11,12 +11,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 try:
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.pdf_tools import PdfFile
+    from src.python.common.xlsx_tools import CsvFile
 except ModuleNotFoundError:
     sys.path.append("../../..")
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.pdf_tools import PdfFile
+    from src.python.common.xlsx_tools import CsvFile
 
 
 def main(environment, ll_username, ll_password, ws_name, compliance, accounts, label):
@@ -62,6 +62,8 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     report_details = {
         "environment_name": environment.upper(),
         "environment_workspace": ws_name,
+        "ws_id": ws_id,
+        "ll_url": ll_url,
         "compliance_name": compliance.upper(),
         "compliance_label": label,
         "generation_date": date.today().strftime("%d/%m/%Y"),
@@ -93,6 +95,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
                 # Create a dictionary to store the results
                 rule_details = {
                     "name": rule["name"],
+                    "id": rule["id"],
                     "violated_resources": {}
                 }
                 # Iterate over the completed futures and process the results
@@ -135,6 +138,14 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     if accounts:
         ws_accounts = [a for a in ws_accounts if a['cloud_account_id'] in accounts]
         print(color(f"Accounts included in the report: {[a['cloud_account_id'] for a in ws_accounts]}", "blue"))
+    report_details["total_accounts"] = len(ws_accounts)
+
+    xlsx_file_name = f"{environment.upper()} {compliance}{f' {label}' if label else ''} Compliance report.xlsx"
+    xlsx = CsvFile(xlsx_file_name, report_details)
+    for i, violated_rule in enumerate(report_details["violated_rules"]):
+        rule_number = i + 1
+        xlsx.create_new_rule_sheet(violated_rule, rule_number, ws_accounts)
+    xlsx.save_csv()
 
 
 def process_violation(violation, graph_client, ll_url, ws_id):
