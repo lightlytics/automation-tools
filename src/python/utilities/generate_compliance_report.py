@@ -178,11 +178,14 @@ def enrich_accounts(report_details, ws_accounts, graph_client):
 
 
 def update_violated_resources(r, missing_account, graph_client):
-    r.get("violated_resources")[missing_account] = {
-        "resource_ids": [],
-        "total_resources": graph_client.get_resources_type_count_by_account(
-            r.get("resource_type"), missing_account)
-    }
+    try:
+        r.get("violated_resources")[missing_account] = {
+            "resource_ids": [],
+            "total_resources": graph_client.get_resources_type_count_by_account(
+                r.get("resource_type"), missing_account)
+        }
+    except IndexError:
+        r.get("violated_resources")[missing_account] = {"resource_ids": [], "total_resources": 0}
 
 
 if __name__ == "__main__":

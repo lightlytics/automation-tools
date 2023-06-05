@@ -205,10 +205,7 @@ class GraphCommon(object):
         query = "query InventorySummaryQuery($account_id: String){inventorySummary(account_id: $account_id){" \
                 "resource_type count __typename}}"
         results = self.graph_query(operation, {"account_id": account}, query)['data']['inventorySummary']
-        try:
-            return [r["count"] for r in results if r["resource_type"] == resource_type][0]
-        except IndexError:
-            return 0
+        return [r["count"] for r in results if r["resource_type"] == resource_type][0]
 
     def get_resource_configuration_by_id(self, resource_id):
         """ Get configuration details by resource's ID.
