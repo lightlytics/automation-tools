@@ -195,6 +195,18 @@ class GraphCommon(object):
             raise Exception(f"Something else occurred, error: {res.text}")
         return res["data"]["updateAccount"]
 
+    def get_resources_type_count_by_account(self, resource_type, account):
+        """ Get resources count by account.
+            :param account (str)        - Account ID.
+            :param resource_type (str)  - Resource type.
+            :returns (int)              - Resources count.
+        """
+        operation = "InventorySummaryQuery"
+        query = "query InventorySummaryQuery($account_id: String){inventorySummary(account_id: $account_id){" \
+                "resource_type count __typename}}"
+        results = self.graph_query(operation, {"account_id": account}, query)['data']['inventorySummary']
+        return [r["count"] for r in results if r["resource_type"] == resource_type][0]
+
     def get_resource_configuration_by_id(self, resource_id):
         """ Get configuration details by resource's ID.
             :param resource_id (str)    - Specific resource's ID.
@@ -255,6 +267,30 @@ class GraphCommon(object):
             :returns (list) - Compliance rules.
         """
         return [r for r in self.get_all_rules() if compliance in r['compliance']]
+
+    def get_rule_metadata(self, rule_id):
+        """ Get rule metadata.
+            :returns (dict) - Rule metadata.
+        """
+        operation = 'RuleQuery'
+        query = "query RuleQuery($id: ID){rule(id: $id){...RuleFields __typename}}fragment RuleFields on Rule" \
+                "{id name status state category severity description remediation labels compliance rule_type subject " \
+                "action path_source_predicate_equals_match path_intermediate_predicate_equals_match " \
+                "path_destination_predicate_equals_match path_source_predicate{...ConditionFields __typename}" \
+                "path_intermediate_predicate{...ConditionFields __typename}path_destination_predicate{" \
+                "...ConditionFields __typename}resource_predicate{...ConditionFields __typename}fail_simulation ports" \
+                "{start end protocol __typename}creation_date created_by __typename}" \
+                "fragment ConditionFields on ResourceCondition{resource_id resource_type attributes{operand " \
+                "attributes_list{...AttributeFields attributes_list{...AttributeFields attributes_list{" \
+                "...AttributeFields attributes_list{...AttributeFields attributes_list{...AttributeFields " \
+                "attributes_list{...AttributeFields __typename}__typename}__typename}__typename}__typename}" \
+                "__typename}__typename}tags{operand attributes_list{...AttributeFields attributes_list{" \
+                "...AttributeFields attributes_list{...AttributeFields attributes_list{...AttributeFields " \
+                "attributes_list{...AttributeFields attributes_list{...AttributeFields __typename}__typename}" \
+                "__typename}__typename}__typename}__typename}__typename}locations{location_type location_value " \
+                "__typename}__typename}fragment AttributeFields on ConditionAttribute{name value match_type operand " \
+                "__typename}"
+        return self.graph_query(operation, {"id": rule_id}, query)["data"]["rule"]
 
     def get_rule_violations(self, rule_id, filter_path_violations=False):
         """ Get all rule violations.
