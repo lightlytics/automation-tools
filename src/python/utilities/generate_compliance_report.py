@@ -140,6 +140,11 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
         print(color(f"Accounts included in the report: {[a['cloud_account_id'] for a in ws_accounts]}", "blue"))
     report_details["total_accounts"] = len(ws_accounts)
 
+    print(color("Enriching rules with accounts information", "blue"))
+    enrich_accounts(report_details, ws_accounts, graph_client)
+    print(color("Enriching finished successfully", "green"))
+
+    print(color("Generating XLSX file", "blue"))
     xlsx_file_name = f"{environment.upper()} {compliance}{f' {label}' if label else ''} Compliance report.xlsx"
     xlsx = CsvFile(xlsx_file_name, report_details)
     for i, violated_rule in enumerate(report_details["violated_rules"]):
@@ -156,6 +161,28 @@ def process_violation(violation, graph_client, ll_url, ws_id):
         "url": f"{ll_url}/w/{ws_id}/discovery?{encoded_query_url}",
     }
     return violation_account, violation_details
+
+
+def enrich_accounts(report_details, ws_accounts, graph_client):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for r in report_details["violated_rules"]:
+            all_accounts_to_report = sorted([a["cloud_account_id"] for a in ws_accounts])
+            all_accounts_in_rule = sorted(list(r.get("violated_resources").keys()))
+            if all_accounts_to_report != all_accounts_in_rule:
+                missing_accounts = [a for a in all_accounts_to_report if a not in all_accounts_in_rule]
+                for missing_account in missing_accounts:
+                    future = executor.submit(update_violated_resources, r, missing_account, graph_client)
+                    futures.append(future)
+        concurrent.futures.wait(futures)
+
+
+def update_violated_resources(r, missing_account, graph_client):
+    r.get("violated_resources")[missing_account] = {
+        "resource_ids": [],
+        "total_resources": graph_client.get_resources_type_count_by_account(
+            r.get("resource_type"), missing_account)
+    }
 
 
 if __name__ == "__main__":

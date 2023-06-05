@@ -108,7 +108,8 @@ class CsvFile(object):
 
     def create_new_rule_sheet(self, violated_rule, rule_number, ws_accounts):
         # Sheet general configuration
-        sheet = self.workbook.create_sheet(title=violated_rule["name"][0:30])
+        title_name = violated_rule["name"].replace("*", "").replace(":", "").replace("(", "").replace(")", "")
+        sheet = self.workbook.create_sheet(title=title_name[0:30])
         sheet.column_dimensions['A'].width = 28
         sheet.column_dimensions['B'].width = 20
         sheet.column_dimensions['C'].width = 20
