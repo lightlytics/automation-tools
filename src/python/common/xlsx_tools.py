@@ -2,6 +2,7 @@ import os
 
 from datetime import datetime, timezone
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
 
@@ -12,14 +13,45 @@ class CsvFile(object):
         self.filename = filename
         self.report_details = report_details
 
+        self.create_title_tab()
         self.create_overview_tab()
+
+    def create_title_tab(self):
+        sheet = self.workbook.active
+        sheet.title = "Title"
+        sheet.merge_cells("A1:F36")
+        merged_cell = sheet["A1"]
+        merged_cell.fill = PatternFill(start_color="ebe4e2", end_color="ebe4e2", fill_type="solid")
+        for i in range(48):
+            sheet.row_dimensions[i+1].height = 15.75
+        for col in ["A", "B", "C", "D", "E", "F"]:
+            sheet.column_dimensions[col].width = 13
+        # Add top left logo
+        logo_path = os.path.join(self.dir_path, "report_assets", "logo1.png")
+        img = Image(logo_path)
+        img.width = 150
+        img.height = 50
+        sheet.add_image(img, "A1")
+        # Add central image
+        image_path = os.path.join(self.dir_path, "report_assets", "asset1.png")
+        img = Image(image_path)
+        img.anchor = "A6"
+        img.width = 540
+        img.height = 300
+        sheet.add_image(img)
+        # Add bottom right asset
+        asset_path = os.path.join(self.dir_path, "report_assets", "asset2.png")
+        img = Image(asset_path)
+        img.anchor = "E35"
+        img.width = 160
+        img.height = 35
+        sheet.add_image(img)
 
     def create_overview_tab(self):
         # Sheet general configuration
-        sheet = self.workbook.active
-        sheet.title = "Overview"
+        sheet = self.workbook.create_sheet(title="Overview")
         sheet.column_dimensions['A'].width = 30
-        sheet.column_dimensions['B'].width = 81
+        sheet.column_dimensions['B'].width = 45
         for i in range(8):
             sheet.row_dimensions[i+1].height = 30
 
@@ -44,9 +76,9 @@ class CsvFile(object):
         sheet["B2"] = self.filename.replace(".xlsx", "")
         sheet["B3"] = f'AWS {self.report_details["compliance_name"]} assessment report'
         sheet["B4"] = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S") + " UTC"
-        sheet["B5"] = self.report_details["total_rules"] + " rules"
-        sheet["B6"] = self.report_details["total_accounts"] + " accounts"
-        sheet["B7"] = self.report_details["total_violations"] + " resources"
+        sheet["B5"] = str(self.report_details["total_rules"]) + " rules"
+        sheet["B6"] = str(self.report_details["total_accounts"]) + " accounts"
+        sheet["B7"] = str(self.report_details["total_violations"]) + " resources"
 
         # Footer
         sheet.merge_cells("A8:B8")
@@ -58,11 +90,11 @@ class CsvFile(object):
 
     def create_new_rule_sheet(self, violated_rule, rule_number, ws_accounts):
         # Sheet general configuration
-        sheet = self.workbook.create_sheet(title=violated_rule["name"][0:25])
-        sheet.column_dimensions['A'].width = 30
-        sheet.column_dimensions['B'].width = 45
-        sheet.column_dimensions['C'].width = 45
-        sheet.column_dimensions['D'].width = 30
+        sheet = self.workbook.create_sheet(title=violated_rule["name"][0:30])
+        sheet.column_dimensions['A'].width = 28
+        sheet.column_dimensions['B'].width = 20
+        sheet.column_dimensions['C'].width = 20
+        sheet.column_dimensions['D'].width = 10
         for i in range(4):
             sheet.row_dimensions[i+1].height = 30
 
