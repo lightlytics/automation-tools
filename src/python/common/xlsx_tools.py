@@ -110,15 +110,16 @@ class CsvFile(object):
         # Sheet general configuration
         title_name = violated_rule["name"].replace("*", "").replace(":", "").replace("(", "").replace(")", "")
         sheet = self.workbook.create_sheet(title=title_name[0:30])
-        sheet.column_dimensions['A'].width = 28
-        sheet.column_dimensions['B'].width = 20
-        sheet.column_dimensions['C'].width = 20
+        sheet.column_dimensions['A'].width = 20
+        sheet.column_dimensions['B'].width = 18
+        sheet.column_dimensions['C'].width = 18
         sheet.column_dimensions['D'].width = 10
+        sheet.column_dimensions['E'].width = 10
         for i in range(4):
             sheet.row_dimensions[i+1].height = 30
 
         # Sheet "Rule Name" header
-        sheet.merge_cells("A1:D1")
+        sheet.merge_cells("A1:E1")
         merged_cell = sheet["A1"]
         merged_cell.alignment = Alignment(horizontal="center", vertical="center")
         merged_cell.font = Font(name="Helvetica", size=10, bold=True)
@@ -129,16 +130,16 @@ class CsvFile(object):
         for i, cell_content in enumerate(["Control name", "Assessment report summary"]):
             sheet[f"A{i + 2}"] = cell_content
             sheet[f"A{i + 2}"].font = Font(name="Helvetica", size=10, bold=True)
-            sheet[f"A{i + 2}"].alignment = Alignment(horizontal="left", vertical="center")
+            sheet[f"A{i + 2}"].alignment = Alignment(horizontal="left", vertical="center", wrapText=True)
 
         # Actual Content
-        sheet.merge_cells("B2:D2")
+        sheet.merge_cells("B2:E2")
         sheet["B2"] = violated_rule["name"]
         sheet["B2"].alignment = Alignment(wrapText=True)
         total_resources = sum([a[1]["total_resources"] for a in violated_rule["violated_resources"].items()])
         total_violations = sum([len(a[1]["resource_ids"]) for a in violated_rule["violated_resources"].items()])
         total_compliant = total_resources - total_violations
-        sheet.merge_cells("B3:D3")
+        sheet.merge_cells("B3:E3")
         sheet["B3"] = f"{total_resources} ({total_compliant} Compliant, {total_violations} Non-compliant)"
 
         # Resources Table
@@ -153,30 +154,35 @@ class CsvFile(object):
             sheet[f"A{i + 5}"].border = border
             sheet[f"B{i + 5}"] = account["cloud_account_id"]
             sheet[f"B{i + 5}"].border = border
-            try:
-                account_violation_count = len(
-                    violated_rule["violated_resources"][account["cloud_account_id"]]["resource_ids"])
-                total_account_resources = \
-                    violated_rule["violated_resources"][account["cloud_account_id"]]["total_resources"]
-                sheet[f"C{i + 5}"] = f"{account_violation_count} violations out of {total_account_resources}"
-                sheet[f"C{i + 5}"].border = border
-                ll_url = self.report_details['ll_url']
-                ws_id = self.report_details['ws_id']
-                sheet[f"D{i + 5}"].hyperlink = \
-                    f"{ll_url}/w/{ws_id}/rules/{violated_rule['id']}" \
-                    f"?f%5Baccount_id%5D%5B0%5D={account['cloud_account_id']}"
-                font = Font(underline="single", color="0000FF")
-                sheet[f"D{i + 5}"].font = font
-                sheet[f"D{i + 5}"].value = "Evidence"
-                sheet[f"D{i + 5}"].border = border
-            except KeyError:
-                sheet[f"C{i + 5}"] = "Found 0 violations"
-                sheet[f"C{i + 5}"].border = border
-                sheet[f"D{i + 5}"].border = border
+            account_violation_count = len(
+                violated_rule["violated_resources"][account["cloud_account_id"]]["resource_ids"])
+            total_account_resources = \
+                violated_rule["violated_resources"][account["cloud_account_id"]]["total_resources"]
+            sheet[f"C{i + 5}"] = f"{account_violation_count} violations out of {total_account_resources}"
+            sheet[f"C{i + 5}"].border = border
+            ll_url = self.report_details['ll_url']
+            ws_id = self.report_details['ws_id']
+            sheet[f"D{i + 5}"].hyperlink = \
+                f"{ll_url}/w/{ws_id}/rules/{violated_rule['id']}" \
+                f"?f%5Baccount_id%5D%5B0%5D={account['cloud_account_id']}"
+            font = Font(underline="single", color="0000FF")
+            sheet[f"D{i + 5}"].font = font
+            sheet[f"D{i + 5}"].value = "Evidence"
+            sheet[f"D{i + 5}"].border = border
+            if account_violation_count > 0:
+                font = Font(color="FF0000")
+                sheet[f"E{i + 5}"] = "Failed"
+                sheet[f"E{i + 5}"].font = font
+                sheet[f"E{i + 5}"].border = border
+            else:
+                font = Font(color="00B050")
+                sheet[f"E{i + 5}"] = "Passed"
+                sheet[f"E{i + 5}"].font = font
+                sheet[f"E{i + 5}"].border = border
 
         # Footer
         row_number = len(ws_accounts) + 5
-        sheet.merge_cells(f"A{row_number}:D{row_number}")
+        sheet.merge_cells(f"A{row_number}:E{row_number}")
         merged_cell = sheet[f"A{row_number}"]
         merged_cell.alignment = Alignment(horizontal="center", vertical="center")
         merged_cell.font = Font(name="Helvetica", size=12, bold=True, color="FFFFFF")
