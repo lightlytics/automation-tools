@@ -67,6 +67,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
         "compliance_name": compliance.upper(),
         "compliance_label": label,
         "generation_date": date.today().strftime("%d/%m/%Y"),
+        "all_rules": compliance_rules,
         "total_rules": compliance_rules_count,
         "total_rules_violated": 0,
         "total_violations": 0,
