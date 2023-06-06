@@ -160,7 +160,7 @@ class CsvFile(object):
             sheet[f"B{i + 5}"].border = self.default_border
 
             # Rule Severity
-            severities = {1: "Critical", 2: "High", 3: "Medium", 4: "Low"}
+            severities = {4: "Critical", 3: "High", 2: "Medium", 1: "Low"}
             rule_severity = rule["severity"]
             sheet[f"C{i + 5}"] = f"Severity: {severities[rule_severity]}"
             sheet[f"C{i + 5}"].border = self.default_border
