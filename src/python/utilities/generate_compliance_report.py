@@ -11,12 +11,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 try:
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.xlsx_tools import CsvFile
+    from src.python.common.xlsx_tools import XlsxFile
 except ModuleNotFoundError:
     sys.path.append("../../..")
     from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.xlsx_tools import CsvFile
+    from src.python.common.xlsx_tools import XlsxFile
 
 
 def main(environment, ll_username, ll_password, ws_name, compliance, accounts, label):
@@ -149,10 +149,11 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
 
     print(color("Generating XLSX file", "blue"))
     xlsx_file_name = f"{environment.upper()} {compliance}{f' {label}' if label else ''} Compliance report.xlsx"
-    xlsx = CsvFile(xlsx_file_name, report_details)
+    xlsx = XlsxFile(xlsx_file_name)
+    xlsx.create_compliance_report_template(report_details)
     for i, violated_rule in enumerate(report_details["violated_rules"]):
         rule_number = i + 1
-        xlsx.create_new_rule_sheet(violated_rule, rule_number, ws_accounts)
+        xlsx.create_new_rule_sheet(report_details, violated_rule, rule_number, ws_accounts)
     xlsx.save_csv()
 
 
