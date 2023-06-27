@@ -87,6 +87,7 @@ class GraphCommon(object):
         except IndexError:
             raise Exception("Can't find WS")
 
+    # Account methods
     def get_accounts(self):
         """ Get all accounts.
             :returns (list) - Integrations in the environment.
@@ -195,6 +196,23 @@ class GraphCommon(object):
             raise Exception(f"Something else occurred, error: {res.text}")
         return res["data"]["updateAccount"]
 
+    # Resources methods
+    def get_resources(self, parent_data=False):
+        """ Get resources details.
+            :param parent_data (boolean)    - Expend/not details; Defaults to False.
+            :returns (dict/list)            - resources details.
+        """
+        operation = "ResourcesQuery"
+        query = "query ResourcesQuery{resources{id type display_name is_public state parent __typename}}"
+        resources = self.graph_query(operation, {}, query)['data']['resources']
+        if not parent_data:
+            try:
+                return [r['id'] for r in resources]
+            except TypeError:
+                raise Exception("Couldn't fetch resources")
+        else:
+            return resources
+
     def get_resources_type_count_by_account(self, resource_type, account):
         """ Get resources count by account.
             :param account (str)        - Account ID.
@@ -231,16 +249,16 @@ class GraphCommon(object):
                 "{parents}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['parents']
 
-    def get_resource_cloud_account_id(self, resource_id):
+    def get_resource_account_id(self, resource_id):
         """ Get resource account ID.
             :param resource_id (str)    - Specific resource's ID.
-            :returns (list)             - Resource account.
+            :returns (str)              - Account ID.
         """
-        parent = self.get_resource_parents_by_id(resource_id)[0]
-        if parent == "AWS":
-            return resource_id
-        else:
-            return self.get_resource_cloud_account_id(parent)
+        operation = 'ResourceQuery'
+        query = "query ResourceQuery($resource_id: ID, $simulation_timestamp: Timestamp){" \
+                "resource(resource_id: $resource_id simulation_timestamp: $simulation_timestamp return_deleted: true)" \
+                "{account_id}}"
+        return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['account_id']
 
     def get_compliance_standards(self):
         """ Get all compliance standards.
@@ -250,6 +268,7 @@ class GraphCommon(object):
         query = "query Compliances{compliance{results{compliance __typename}__typename}}"
         return [c['compliance'] for c in self.graph_query(operation, {}, query)['data']['compliance']['results']]
 
+    # Arch Standards methods
     def get_all_rules(self):
         """ Get all "standards" rules.
             :returns (list) - Rules.
@@ -292,24 +311,71 @@ class GraphCommon(object):
                 "__typename}"
         return self.graph_query(operation, {"id": rule_id}, query)["data"]["rule"]
 
-    def get_rule_violations(self, rule_id, filter_path_violations=False):
+    def get_rule_violations(self, rule_id):
         """ Get all rule violations.
             :returns (list) - Rule violations.
         """
         operation = 'RuleViolations'
-        query = "query RuleViolations($filters: RuleViolationFilters, $filter_inventory: " \
-                "RuleViolationFilterInventory, $skip: Int, $limit: Int){ruleViolations(filters: $filters " \
-                "filter_inventory: $filter_inventory skip: $skip limit: $limit){total_count results{id values{ " \
-                "rule_id violation_type predicted_monthly_cost ... on RuleResourceViolation{resource_id __typename} " \
-                "... on RulePathViolation{id violation_ids path_id path{id united_resources{id __typename} " \
-                "__typename} destinations{id __typename}port_ranges{start end protocol __typename} actions " \
-                "__typename}__typename}__typename}__typename}}"
-        variables = {"filters": {"rule_id": rule_id}, "filter_inventory": {}, "skip": 0, "limit": 0}
+        query = "query RuleViolations($rule_id: String, $filter_inventory: RuleViolationFilterInventory, $skip: " \
+                "Int, $limit: Int){ruleViolations(rule_id: $rule_id filter_inventory: $filter_inventory skip: " \
+                "$skip limit: $limit){total_count results __typename}}"
+        variables = {"rule_id": rule_id, "filter_inventory": {}, "skip": 0, "limit": 0}
         violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
-        if filter_path_violations:
-            return [v for v in violations if v["__typename"] != "RulePathViolation"]
         return violations
 
+    # Cost methods
+    def get_cost_rules(self, ids=None):
+        """
+        Get rules.
+        :parm event_ids (list)      - Get rules according to defined event id. Defaults to None.
+        :returns (list)             - rules cost.
+        """
+        operation = "RulesCostQuery"
+        variables = {}
+        if ids:
+            variables = {"ids": ids}
+        query = "query RulesCostQuery($ids: [String]) {  rules_cost(rules_ids: $ids) {    results {      rule_id" \
+                "      predicted_cost      __typename    }    __typename  }}"
+        try:
+            return self.graph_query(operation, variables, query)["data"]["rules_cost"]["results"]
+        except TypeError:
+            return []
+
+    def get_cost_data_by_filters(self, filters=None, from_timestamp=0, to_timestamp=0, group_by="resource_type",
+                                 trend_period="month"):
+        operation = "CostQuery"
+        query = "query CostQuery($skip: Int, $limit: Int, $filters: CostFilters, $sort: CostSort, $groupBy: [" \
+                "CostGroupBy], $trend_period: CostTrendPeriod, $gbResourceId: Boolean!, $gbOriginalResourceId: " \
+                "Boolean!, $gbLineItemType: Boolean!, $gbUsageType: Boolean!, $gbResourceType: Boolean!, $gbAccount: " \
+                "Boolean!, $gbRegion: Boolean!, $gbVpc: Boolean!, $gbAvailabilityZone: Boolean!, $gbDay: Boolean!, " \
+                "$gbMonth: Boolean!, $gbYear: Boolean!, $gbChargeType: Boolean!){cost(filters: $filters " \
+                "group_bys: $groupBy trend_period: $trend_period sort: $sort skip: $skip limit: $limit) " \
+                "{total_count results{timestamp total_cost total_direct_cost " \
+                "total_indirect_cost preceding_total_cost preceding_total_direct_cost predicted_cost " \
+                "trend_difference trend_percentage trend_difference_direct trend_percentage_direct " \
+                "trend_difference_indirect trend_percentage_indirect resource_id @include(if: " \
+                "$gbResourceId) original_resource_id @include(if: $gbOriginalResourceId) line_item_type " \
+                "@include(if: $gbLineItemType) usage_type @include(if: $gbUsageType) resource_type " \
+                "@include(if: $gbResourceType) account @include(if: $gbAccount) region @include(if: " \
+                "$gbRegion) vpc @include(if: $gbVpc) availability_zone @include(if: $gbAvailabilityZone) " \
+                "day @include(if: $gbDay) month @include(if: $gbMonth) year @include(if: $gbYear) " \
+                "charge_type @include(if: $gbChargeType)__typename}__typename}} "
+        variables = {"filters": {"from_timestamp": from_timestamp, "to_timestamp": to_timestamp},
+                     "sort": {"field": "trend_difference", "direction": "desc"},
+                     "groupBy": [group_by], "trend_period": trend_period, "gbResourceId": True,
+                     "gbOriginalResourceId": False, "gbLineItemType": False, "gbUsageType": False,
+                     "gbResourceType": True, "gbAccount": False, "gbRegion": False, "gbVpc": False,
+                     "gbAvailabilityZone": False, "gbDay": False, "gbMonth": False, "gbYear": False,
+                     "gbChargeType": False, "skip": 0, "limit": 100}
+        if bool(filters):
+            for each_filter in filters:
+                variables["filters"][each_filter] = filters[each_filter]
+        res = self.graph_query(operation, variables, query)
+        if 'errors' in res:
+            raise Exception(f'Something went wrong, result: {res}')
+        return res['data']['cost']['results']
+
+    # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
         """ Create payload.

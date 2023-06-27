@@ -76,7 +76,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
 
     print(color(f"Getting violations for each rule", "blue"))
     for rule in compliance_rules:
-        rule["violations"] = graph_client.get_rule_violations(rule["id"], filter_path_violations=True)
+        rule["violations"] = graph_client.get_rule_violations(rule["id"])
         violations_count = len(rule["violations"])
         rule["metadata"] = graph_client.get_rule_metadata(rule["id"])
         report_details["total_violations"] += violations_count
@@ -158,10 +158,10 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
 
 
 def process_violation(violation, graph_client, ll_url, ws_id):
-    encoded_query_url = quote_plus("i[resourceId]") + "=" + quote_plus(violation['id'])
-    violation_account = graph_client.get_resource_cloud_account_id(violation["id"])
+    encoded_query_url = quote_plus("i[resourceId]") + "=" + quote_plus(violation)
+    violation_account = graph_client.get_resource_account_id(violation)
     violation_details = {
-        "id": violation["id"],
+        "id": violation,
         "url": f"{ll_url}/w/{ws_id}/discovery?{encoded_query_url}",
     }
     return violation_account, violation_details
