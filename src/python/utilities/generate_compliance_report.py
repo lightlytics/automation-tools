@@ -102,8 +102,6 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
                 # Iterate over the completed futures and process the results
                 for future in concurrent.futures.as_completed(futures):
                     violation_account, violation_details = future.result()
-                    if "foreign" in violation_account:
-                        continue
                     try:
                         rule_details["violated_resources"][violation_account]["resource_ids"].append(violation_details)
                     except KeyError:
