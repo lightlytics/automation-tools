@@ -56,7 +56,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int
+                sub_account, sts_client, graph_client, regions, random_int, parallel
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
@@ -67,7 +67,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
     print(color("Integration finished successfully!", "green"))
 
 
-def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int):
+def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, parallel=False):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
@@ -99,7 +99,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                 if sorted(current_regions) != sorted(potential_regions):
                     print(color(
                         f"Account: {sub_account[0]} | Regions are different, updating to {potential_regions}", "blue"))
-                    if not update_regions(graph_client, sub_account, potential_regions):
+                    if not update_regions(graph_client, sub_account, potential_regions, not parallel):
                         err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
                         print(color(err_msg, "red"))
                         raise Exception(err_msg)
@@ -139,7 +139,8 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                                if acc["cloud_account_id"] == sub_account[0]][0]
 
         # Deploying the initial integration stack
-        if not deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
+        if not deploy_init_stack(
+                account_information, graph_client, sub_account, sub_account_session, random_int, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with init stack deployment"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
@@ -149,7 +150,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
         # Updating the regions in Lightlytics and waiting
-        if not update_regions(graph_client, sub_account, active_regions):
+        if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
@@ -166,17 +167,18 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
         raise Exception(err_msg)
 
 
-def update_regions(graph_client, sub_account, active_regions):
+def update_regions(graph_client, sub_account, active_regions, wait=True):
     print(color(f"Account: {sub_account[0]} | Updating regions in Lightlytics according to active regions", "blue"))
     graph_client.edit_regions(sub_account[0], active_regions)
     print(color(f"Account: {sub_account[0]} | Updated regions to {active_regions}", "green"))
 
-    print(color(f"Account: {sub_account[0]} | Waiting for the account to finish editing regions", "blue"))
-    account_status = graph_client.wait_for_account_connection(sub_account[0])
-    if account_status != "READY":
-        print(color(
-            f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
-        return False
+    if wait:
+        print(color(f"Account: {sub_account[0]} | Waiting for the account to finish editing regions", "blue"))
+        account_status = graph_client.wait_for_account_connection(sub_account[0])
+        if account_status != "READY":
+            print(color(
+                f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
+            return False
     print(color(f"Account: {sub_account[0]} | Editing regions finished successfully", "green"))
     return True
 

@@ -93,7 +93,7 @@ def deploy_all_collection_stacks(
         # Iterate over active_regions and submit each task to the executor
         for region in active_regions:
             future = executor.submit(deploy_collection_stack, account_information,
-                                     sub_account_session, sub_account, region, random_int)
+                                     sub_account_session, sub_account, region, random_int, False)
             futures.append(future)
     # Wait for all the tasks to complete
     concurrent.futures.wait(futures)
@@ -101,7 +101,7 @@ def deploy_all_collection_stacks(
     return
 
 
-def deploy_collection_stack(account_information, sub_account_session, sub_account, region, random_int):
+def deploy_collection_stack(account_information, sub_account_session, sub_account, region, random_int, wait=True):
     # Existing code inside the for loop
     print(color(f"Account: {sub_account[0]} | Adding collection CFT stack for {region}", "blue"))
     region_client = sub_account_session.client('cloudformation', region_name=region)
@@ -111,11 +111,12 @@ def deploy_collection_stack(account_information, sub_account_session, sub_accoun
     collection_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
     print(color(f"Account: {sub_account[0]} | Collection stack {collection_stack_id} deploying", "blue"))
 
-    print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
-    wait_for_cloudformation(sub_account, collection_stack_id, region_client)
+    if wait:
+        print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
+        wait_for_cloudformation(sub_account, collection_stack_id, region_client)
 
 
-def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int):
+def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int, wait=True):
     sub_account_template_url = account_information["template_url"]
     print(color(f"Account: {sub_account[0]} | Finished fetching information", "green"))
 
@@ -127,15 +128,18 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
     sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
     print(color(f"Account: {sub_account[0]} | {sub_account_stack_id} Created successfully", "green"))
 
-    print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
-    wait_for_cloudformation(sub_account, sub_account_stack_id, cf)
+    if wait:
+        print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
+        wait_for_cloudformation(sub_account, sub_account_stack_id, cf)
 
-    print(color(f"Account: {sub_account[0]} | Waiting for the account to finish integrating with Lightlytics", "blue"))
-    account_status = graph_client.wait_for_account_connection(sub_account[0])
-    if account_status != "READY":
-        print(color(
-            f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
-        return False
+        print(color(f"Account: {sub_account[0]} | "
+                    f"Waiting for the account to finish integrating with Lightlytics", "blue"))
+        account_status = graph_client.wait_for_account_connection(sub_account[0])
+        if account_status != "READY":
+            print(color(
+                f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
+            return False
+
     print(color(f"Account: {sub_account[0]} | Integrated successfully with Lightlytics", "green"))
     return True
 
