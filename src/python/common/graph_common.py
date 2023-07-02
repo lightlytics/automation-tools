@@ -249,6 +249,17 @@ class GraphCommon(object):
                 "{parents}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['parents']
 
+    def get_resource_metadata(self, resource_id):
+        """ Get resource metadata.
+            :param resource_id (str)    - Specific resource's ID.
+            :returns (str)              - Account ID.
+        """
+        operation = 'ResourceQuery'
+        query = "query ResourceQuery($resource_id: ID, $simulation_timestamp: Timestamp){resource(resource_id: " \
+                "$resource_id simulation_timestamp: $simulation_timestamp return_deleted: true){id type display_name " \
+                "end_timestamp region parent account_id __typename}}"
+        return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']
+
     def get_resource_account_id(self, resource_id):
         """ Get resource account ID.
             :param resource_id (str)    - Specific resource's ID.
@@ -324,22 +335,19 @@ class GraphCommon(object):
         return violations
 
     # Cost methods
-    def get_cost_rules(self, ids=None):
+    def get_cost_rules(self):
         """
-        Get rules.
-        :parm event_ids (list)      - Get rules according to defined event id. Defaults to None.
-        :returns (list)             - rules cost.
+        Get Cost-related rules.
+        :returns (list) - Cost Rules.
         """
-        operation = "RulesCostQuery"
-        variables = {}
-        if ids:
-            variables = {"ids": ids}
-        query = "query RulesCostQuery($ids: [String]) {  rules_cost(rules_ids: $ids) {    results {      rule_id" \
-                "      predicted_cost      __typename    }    __typename  }}"
-        try:
-            return self.graph_query(operation, variables, query)["data"]["rules_cost"]["results"]
-        except TypeError:
-            return []
+        operation = "RulesQuery"
+        query = "query RulesQuery($filters: RuleFilters, $eventId: String, $resourceId: String, $isRemediation: " \
+                "Boolean, $simulation: Boolean){rules(filters: $filters event_id: $eventId resource_id: $resourceId " \
+                "is_remediation: $isRemediation is_simulation: $simulation){total_count results{id name " \
+                "creation_date created_by category severity description labels compliance status state rule_type " \
+                "fail_simulation exclusions_count __typename}__typename}}"
+        all_rules = self.graph_query(operation, {}, query)["data"]["rules"]["results"]
+        return [r for r in all_rules if r["category"] == "Cost" and r["status"] == "active"]
 
     def get_cost_data_by_filters(self, filters=None, from_timestamp=0, to_timestamp=0, group_by="resource_type",
                                  trend_period="month"):
