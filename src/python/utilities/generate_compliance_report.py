@@ -152,7 +152,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     for i, violated_rule in enumerate(report_details["violated_rules"]):
         rule_number = i + 1
         xlsx.create_new_rule_sheet(report_details, violated_rule, rule_number, ws_accounts)
-    xlsx.save_csv()
+    xlsx.save_xlsx()
 
 
 def process_violation(violation, graph_client, ll_url, ws_id):
