@@ -335,6 +335,68 @@ class GraphCommon(object):
         return violations
 
     # Cost methods
+    def check_cost_integration(self):
+        """
+        Check whether cost is integrated or not.
+        :returns (bool) - True/False if cost integrated.
+        """
+        operation = "CostDataStatusQuery"
+        query = "query CostDataStatusQuery{cost_data_status{status __typename}}"
+        integration_status = self.graph_query(operation, {}, query)["data"]["cost_data_status"]["status"]
+        return True if integration_status == "data_exists" else False
+
+    def get_cost_chart(self, from_timestamp, to_timestamp):
+        """
+        Get the cost information.
+        :returns (list) - Cost data.
+        """
+        operation = "CostChartIndexQuery"
+        query = "query CostChartIndexQuery($skip: Int, $limit: Int, $filters: CostFilters, $anti_filters: " \
+                "CostFilters, $sort: CostSort, $groupBy: [CostGroupBy], $trend_period: CostTrendPeriod, " \
+                "$trend_range: TrendRange, $gbResourceId: Boolean!, $gbOriginalResourceId: Boolean!, " \
+                "$gbLineItemType: Boolean!, $gbUsageType: Boolean!, $gbResourceType: Boolean!, $gbAccount: " \
+                "Boolean!, $gbRegion: Boolean!, $gbVpc: Boolean!, $gbAvailabilityZone: Boolean!, $gbDay: " \
+                "Boolean!, $gbMonth: Boolean!, $gbYear: Boolean!, $gbChargeType: Boolean!, $gbInstanceType: " \
+                "Boolean!){cost(filters: $filters anti_filters: $anti_filters group_bys: $groupBy trend_period: " \
+                "$trend_period trend_range: $trend_range sort: $sort skip: $skip limit: $limit){total_count " \
+                "results{total_cost total_direct_cost total_indirect_cost resource_id @include(if: $gbResourceId) " \
+                "original_resource_id @include(if: $gbOriginalResourceId) line_item_type " \
+                "@include(if: $gbLineItemType) usage_type @include(if: $gbUsageType) resource_type " \
+                "@include(if: $gbResourceType) account @include(if: $gbAccount) region @include(if: $gbRegion) " \
+                "vpc @include(if: $gbVpc) availability_zone @include(if: $gbAvailabilityZone) day " \
+                "@include(if: $gbDay) month @include(if: $gbMonth) year @include(if: $gbYear) charge_type " \
+                "@include(if: $gbChargeType) instance_type @include(if: $gbInstanceType)}}}"
+        variables = {
+            "filters": {
+                "from_timestamp": from_timestamp,
+                "to_timestamp": to_timestamp
+            },
+            "sort": {
+                "field": "total_direct_cost",
+                "direction": "desc"
+            },
+            "groupBy": [
+                "resource_type", "region", "account"
+            ],
+            "gbResourceId": False,
+            "gbOriginalResourceId": False,
+            "gbLineItemType": False,
+            "gbUsageType": False,
+            "gbResourceType": True,
+            "gbAccount": True,
+            "gbRegion": True,
+            "gbVpc": False,
+            "gbAvailabilityZone": False,
+            "gbDay": False,
+            "gbMonth": False,
+            "gbYear": False,
+            "gbChargeType": False,
+            "gbInstanceType": False,
+            "skip": 0,
+            "limit": 99999
+        }
+        return self.graph_query(operation, variables, query)["data"]["cost"]["results"]
+
     def get_cost_rules(self):
         """
         Get Cost-related rules.
@@ -348,40 +410,6 @@ class GraphCommon(object):
                 "fail_simulation exclusions_count __typename}__typename}}"
         all_rules = self.graph_query(operation, {}, query)["data"]["rules"]["results"]
         return [r for r in all_rules if r["category"] == "Cost" and r["status"] == "active"]
-
-    def get_cost_data_by_filters(self, filters=None, from_timestamp=0, to_timestamp=0, group_by="resource_type",
-                                 trend_period="month"):
-        operation = "CostQuery"
-        query = "query CostQuery($skip: Int, $limit: Int, $filters: CostFilters, $sort: CostSort, $groupBy: [" \
-                "CostGroupBy], $trend_period: CostTrendPeriod, $gbResourceId: Boolean!, $gbOriginalResourceId: " \
-                "Boolean!, $gbLineItemType: Boolean!, $gbUsageType: Boolean!, $gbResourceType: Boolean!, $gbAccount: " \
-                "Boolean!, $gbRegion: Boolean!, $gbVpc: Boolean!, $gbAvailabilityZone: Boolean!, $gbDay: Boolean!, " \
-                "$gbMonth: Boolean!, $gbYear: Boolean!, $gbChargeType: Boolean!){cost(filters: $filters " \
-                "group_bys: $groupBy trend_period: $trend_period sort: $sort skip: $skip limit: $limit) " \
-                "{total_count results{timestamp total_cost total_direct_cost " \
-                "total_indirect_cost preceding_total_cost preceding_total_direct_cost predicted_cost " \
-                "trend_difference trend_percentage trend_difference_direct trend_percentage_direct " \
-                "trend_difference_indirect trend_percentage_indirect resource_id @include(if: " \
-                "$gbResourceId) original_resource_id @include(if: $gbOriginalResourceId) line_item_type " \
-                "@include(if: $gbLineItemType) usage_type @include(if: $gbUsageType) resource_type " \
-                "@include(if: $gbResourceType) account @include(if: $gbAccount) region @include(if: " \
-                "$gbRegion) vpc @include(if: $gbVpc) availability_zone @include(if: $gbAvailabilityZone) " \
-                "day @include(if: $gbDay) month @include(if: $gbMonth) year @include(if: $gbYear) " \
-                "charge_type @include(if: $gbChargeType)__typename}__typename}} "
-        variables = {"filters": {"from_timestamp": from_timestamp, "to_timestamp": to_timestamp},
-                     "sort": {"field": "trend_difference", "direction": "desc"},
-                     "groupBy": [group_by], "trend_period": trend_period, "gbResourceId": True,
-                     "gbOriginalResourceId": False, "gbLineItemType": False, "gbUsageType": False,
-                     "gbResourceType": True, "gbAccount": False, "gbRegion": False, "gbVpc": False,
-                     "gbAvailabilityZone": False, "gbDay": False, "gbMonth": False, "gbYear": False,
-                     "gbChargeType": False, "skip": 0, "limit": 100}
-        if bool(filters):
-            for each_filter in filters:
-                variables["filters"][each_filter] = filters[each_filter]
-        res = self.graph_query(operation, variables, query)
-        if 'errors' in res:
-            raise Exception(f'Something went wrong, result: {res}')
-        return res['data']['cost']['results']
 
     # General methods
     @staticmethod

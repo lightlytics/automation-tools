@@ -1,0 +1,73 @@
+import argparse
+import csv
+import os
+import sys
+
+
+# Add the project root directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+try:
+    from src.python.common.boto_common import *
+    from src.python.common.graph_common import GraphCommon
+except ModuleNotFoundError:
+    sys.path.append("../../..")
+    from src.python.common.boto_common import *
+    from src.python.common.graph_common import GraphCommon
+
+
+def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp):
+    # Setting up variables
+    start_ts = start_timestamp.replace(",", "T") + ".000Z"
+    end_ts = end_timestamp.replace(",", "T") + ".999Z"
+
+    print(color("Trying to login into Lightlytics", "blue"))
+    ll_url = f"https://{environment}.lightlytics.com"
+    ll_graph_url = f"{ll_url}/graphql"
+    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
+    ws_id = graph_client.get_ws_id_by_name(ws_name)
+    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, customer_id=ws_id)
+    print(color("Logged in successfully!", "green"))
+
+    print(color(f"Checking if cost is integrated in WS: {ws_name}", "blue"))
+    if not graph_client.check_cost_integration():
+        print(color("Cost is not integrated in the workspace, exiting", "red"))
+        sys.exit()
+    print(color("Cost integrated, continuing!", "green"))
+
+    cost_chart = graph_client.get_cost_chart(start_ts, end_ts)
+
+    csv_file = f'{environment.upper()} cost report.csv'
+
+    fieldnames = [
+        'resource_type',
+        'account',
+        'region',
+        'total_cost',
+        'total_direct_cost',
+        'total_indirect_cost',
+    ]
+
+    with open(csv_file, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(cost_chart)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='This script will integrate Lightlytics environment with every account in the organization.')
+    parser.add_argument(
+        "--environment_sub_domain", help="The Lightlytics environment sub domain", required=True)
+    parser.add_argument(
+        "--environment_user_name", help="The Lightlytics environment user name", required=True)
+    parser.add_argument(
+        "--environment_password", help="The Lightlytics environment password", required=True)
+    parser.add_argument(
+        "--ws_name", help="The WS from which to fetch information", required=True)
+    parser.add_argument(
+        "--start_timestamp", help="Starting date for report in Zulu format (YYYY-MM-DD,HH:MM:SS)", required=True)
+    parser.add_argument(
+        "--end_timestamp", help="End date for report in Zulu format (YYYY-MM-DD,HH:MM:SS)", required=True)
+    args = parser.parse_args()
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
+         args.ws_name, args.start_timestamp, args.end_timestamp)
