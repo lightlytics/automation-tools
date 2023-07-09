@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     from src.python.common.xlsx_tools import XlsxFile
 
 
-def main(environment, ll_username, ll_password, ws_name, accounts):
+def main(environment, ll_username, ll_password, ws_name):
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com"
     ll_graph_url = f"{ll_url}/graphql"
@@ -67,4 +67,4 @@ if __name__ == "__main__":
         "--ws_name", help="The WS from which to fetch information", required=True)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.accounts)
+         args.ws_name)
