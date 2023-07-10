@@ -17,8 +17,8 @@ except ModuleNotFoundError:
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp):
     # Setting up variables
-    start_ts = start_timestamp.replace(",", "T") + ".000Z"
-    end_ts = end_timestamp.replace(",", "T") + ".999Z"
+    start_ts = start_timestamp + "T00:00:00.000Z"
+    end_ts = end_timestamp + "T23:59:59.999Z"
 
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com"
@@ -34,9 +34,11 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         sys.exit()
     print(color("Cost integrated, continuing!", "green"))
 
+    print(color(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}", "blue"))
     cost_chart = graph_client.get_cost_chart(start_ts, end_ts)
+    print(color("Fetched cost information successfully!", "green"))
 
-    csv_file = f'{environment.upper()} cost report.csv'
+    csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
 
     fieldnames = [
         'resource_type',
@@ -47,10 +49,12 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         'total_indirect_cost',
     ]
 
+    print(color(f"Generating CSV file, file name: {csv_file}", "blue"))
     with open(csv_file, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(cost_chart)
+    print(color("File generated successfully, export complete!", "green"))
 
 
 if __name__ == "__main__":
@@ -65,9 +69,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
-        "--start_timestamp", help="Starting date for report in Zulu format (YYYY-MM-DD,HH:MM:SS)", required=True)
+        "--start_timestamp", help="Starting date for report in Zulu format (YYYY-MM-DD)", required=True)
     parser.add_argument(
-        "--end_timestamp", help="End date for report in Zulu format (YYYY-MM-DD,HH:MM:SS)", required=True)
+        "--end_timestamp", help="End date for report in Zulu format (YYYY-MM-DD)", required=True)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
          args.ws_name, args.start_timestamp, args.end_timestamp)
