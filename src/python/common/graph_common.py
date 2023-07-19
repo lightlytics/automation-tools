@@ -365,7 +365,7 @@ class GraphCommon(object):
         integration_status = self.graph_query(operation, {}, query)["data"]["cost_data_status"]["status"]
         return True if integration_status == "data_exists" else False
 
-    def get_cost_chart(self, from_timestamp, to_timestamp):
+    def get_cost_chart(self, from_timestamp, to_timestamp, group_by=None):
         """
         Get the cost information.
         :returns (list) - Cost data.
@@ -415,6 +415,15 @@ class GraphCommon(object):
             "skip": 0,
             "limit": 99999
         }
+        if group_by == "day":
+            variables["gbDay"] = True
+            variables["groupBy"].append("day")
+        elif group_by == "month":
+            variables["gbMonth"] = True
+            variables["groupBy"].append("month")
+        elif group_by == "year":
+            variables["gbYear"] = True
+            variables["groupBy"].append("year")
         return self.graph_query(operation, variables, query)["data"]["cost"]["results"]
 
     def get_cost_rules(self):
