@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name, resource_type, accounts):
+def main(environment, ll_username, ll_password, ws_name, resource_type, tags, accounts):
     # Setting up variables
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
@@ -45,12 +45,18 @@ def main(environment, ll_username, ll_password, ws_name, resource_type, accounts
         "accounts": {}
     }
 
+    parsed_tags = []
+    if tags:
+        tags = tags.split(",")
+        for tag in tags:
+            parsed_tags.append(process_tag(tag))
+
     print(color("Searching resources in each account", "blue"))
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future_account_mapping = {}
         futures = []
         for account in all_accounts:
-            future = executor.submit(graph_client.resources_search, account, resource_type)
+            future = executor.submit(graph_client.resources_search, account, resource_type, parsed_tags)
             future_account_mapping[future] = account
             futures.append(future)
         for future in futures:
@@ -71,6 +77,25 @@ def main(environment, ll_username, ll_password, ws_name, resource_type, accounts
     print(color("File generated successfully, export complete!", "green"))
 
 
+def process_tag(tag):
+    tag_key, tag_value = tag.split("|")
+    if "~=" in tag_key:
+        key_operand = "contains"
+    else:
+        key_operand = "equals"
+    if "~=" in tag_value:
+        value_operand = "contains"
+    else:
+        value_operand = "equals"
+    tag_dict = {
+        "key": tag_key.split("=")[-1],
+        "key_operand": key_operand,
+        "value": tag_value.split("=")[-1],
+        "value_operand": value_operand
+    }
+    return tag_dict
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='This script will integrate Lightlytics environment with every account in the organization.')
@@ -85,7 +110,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--resource_type", help="The required resource to return", required=True)
     parser.add_argument(
+        "--tags", help="Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics', "
+                       "the '~=' means 'contains' instead of 'equal' operand, tags divided by ','",
+        required=False)
+    parser.add_argument(
         "--accounts", help="Accounts list to iterate when creating the report", required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.resource_type, args.accounts)
+         args.ws_name, args.resource_type, args.tags, args.accounts)
