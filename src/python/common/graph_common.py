@@ -271,10 +271,11 @@ class GraphCommon(object):
                 "{account_id}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['account_id']
 
-    def resources_search(self, account, resource_type):
+    def resources_search(self, account, resource_type, tags=None):
         """ Search resources by account and types.
             :param account (str)        - Account to search in.
             :param resource_type (str)  - Resource type.
+            :param tags (list)          - List of tags to filter by.
             :returns (list)             - List of resources.
         """
         operation = 'ResourceSearch'
@@ -286,9 +287,15 @@ class GraphCommon(object):
         variables = {
             "includeTags": True,
             "phrase": "",
-            "filters": {"resource_type": [resource_type], "account_id": account, "attributes": []},
+            "filters": {
+                "resource_type": [resource_type],
+                "account_id": account,
+                "attributes": []
+            },
             "skip": 0, "limit": 0
         }
+        if tags:
+            variables["filters"]["tags"] = tags
         return self.graph_query(operation, variables, query)['data']['search']['results']
 
     # Arch Standards methods
