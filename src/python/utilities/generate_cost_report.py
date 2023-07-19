@@ -2,16 +2,15 @@ import argparse
 import csv
 import os
 import sys
+from termcolor import colored as color
 
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
-    from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
 except ModuleNotFoundError:
     sys.path.append("../../..")
-    from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
 
 
