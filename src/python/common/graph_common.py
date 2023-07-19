@@ -271,13 +271,25 @@ class GraphCommon(object):
                 "{account_id}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['account_id']
 
-    def get_compliance_standards(self):
-        """ Get all compliance standards.
-            :returns (list) - Available compliance standards.
+    def resources_search(self, account, resource_type):
+        """ Search resources by account and types.
+            :param account (str)        - Account to search in.
+            :param resource_type (str)  - Resource type.
+            :returns (list)             - List of resources.
         """
-        operation = 'Compliances'
-        query = "query Compliances{compliance{results{compliance __typename}__typename}}"
-        return [c['compliance'] for c in self.graph_query(operation, {}, query)['data']['compliance']['results']]
+        operation = 'ResourceSearch'
+        query = "query ResourceSearch($includeTags: Boolean!, $phrase: String, $filters: SearchFilters, $skip: " \
+                "Int, $limit: Int){search(phrase: $phrase, filters: $filters, skip: $skip, limit: $limit)" \
+                "{totalCount results{id type display_name addresses is_public state network_interfaces{id " \
+                "addresses __typename}tags @include(if: $includeTags){Key Value __typename}cloud_tags @include" \
+                "(if: $includeTags){Key Value __typename}__typename}__typename}}"
+        variables = {
+            "includeTags": True,
+            "phrase": "",
+            "filters": {"resource_type": [resource_type], "account_id": account, "attributes": []},
+            "skip": 0, "limit": 0
+        }
+        return self.graph_query(operation, variables, query)['data']['search']['results']
 
     # Arch Standards methods
     def get_all_rules(self):
@@ -333,6 +345,14 @@ class GraphCommon(object):
         variables = {"rule_id": rule_id, "filter_inventory": {}, "skip": 0, "limit": 0}
         violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
         return violations
+
+    def get_compliance_standards(self):
+        """ Get all compliance standards.
+            :returns (list) - Available compliance standards.
+        """
+        operation = 'Compliances'
+        query = "query Compliances{compliance{results{compliance __typename}__typename}}"
+        return [c['compliance'] for c in self.graph_query(operation, {}, query)['data']['compliance']['results']]
 
     # Cost methods
     def check_cost_integration(self):
