@@ -1,18 +1,17 @@
 import argparse
+import concurrent.futures
+import csv
 import os
 import sys
+from termcolor import colored as color
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
-    from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.xlsx_tools import XlsxFile
 except ModuleNotFoundError:
     sys.path.append("../../..")
-    from src.python.common.boto_common import *
     from src.python.common.graph_common import GraphCommon
-    from src.python.common.xlsx_tools import XlsxFile
 
 
 def main(environment, ll_username, ll_password, ws_name):
@@ -40,6 +39,25 @@ def main(environment, ll_username, ll_password, ws_name):
                            for violation in violations]
                 concurrent.futures.wait(futures)
             print(color(f"Finished processing violations for rule: {rule['name']}!", "green"))
+
+    fieldnames = [
+        'resource_id',
+        'account',
+        'region',
+        'name'
+    ]
+
+    with open('data.csv', 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for key, value in recommendations.items():
+            for violation in value['violations']:
+                writer.writerow({
+                    'resource_id': violation['resource_id'],
+                    'account': violation['account'],
+                    'region': violation['region'],
+                    'name': value['name']
+                })
 
 
 def process_violation(violation, graph_client, recommendations, rule):
