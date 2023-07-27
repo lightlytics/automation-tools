@@ -346,7 +346,7 @@ class GraphCommon(object):
             :returns (list) - Rule violations.
         """
         operation = 'RuleViolations'
-        query = "query RuleViolations($rule_id: String, $filter_inventory: RuleViolationFilterInventory, $skip: " \
+        query = "query RuleViolations($rule_id: ID!, $filter_inventory: RuleViolationFilterInventory, $skip: " \
                 "Int, $limit: Int){ruleViolations(rule_id: $rule_id filter_inventory: $filter_inventory skip: " \
                 "$skip limit: $limit){total_count results __typename}}"
         variables = {"rule_id": rule_id, "filter_inventory": {}, "skip": 0, "limit": 0}
