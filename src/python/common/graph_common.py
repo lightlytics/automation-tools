@@ -377,61 +377,23 @@ class GraphCommon(object):
         Get the cost information.
         :returns (list) - Cost data.
         """
-        operation = "CostChartIndexQuery"
-        query = "query CostChartIndexQuery($skip: Int, $limit: Int, $filters: CostFilters, $anti_filters: " \
-                "CostFilters, $sort: CostSort, $groupBy: [CostGroupBy], $trend_period: CostTrendPeriod, " \
-                "$trend_range: TrendRange, $gbResourceId: Boolean!, $gbOriginalResourceId: Boolean!, " \
-                "$gbLineItemType: Boolean!, $gbUsageType: Boolean!, $gbResourceType: Boolean!, $gbAccount: " \
-                "Boolean!, $gbRegion: Boolean!, $gbVpc: Boolean!, $gbAvailabilityZone: Boolean!, $gbDay: " \
-                "Boolean!, $gbMonth: Boolean!, $gbYear: Boolean!, $gbChargeType: Boolean!, $gbInstanceType: " \
-                "Boolean!){cost(filters: $filters anti_filters: $anti_filters group_bys: $groupBy trend_period: " \
-                "$trend_period trend_range: $trend_range sort: $sort skip: $skip limit: $limit){total_count " \
-                "results{total_cost total_direct_cost total_indirect_cost resource_id @include(if: $gbResourceId) " \
-                "original_resource_id @include(if: $gbOriginalResourceId) line_item_type " \
-                "@include(if: $gbLineItemType) usage_type @include(if: $gbUsageType) resource_type " \
-                "@include(if: $gbResourceType) account @include(if: $gbAccount) region @include(if: $gbRegion) " \
-                "vpc @include(if: $gbVpc) availability_zone @include(if: $gbAvailabilityZone) day " \
-                "@include(if: $gbDay) month @include(if: $gbMonth) year @include(if: $gbYear) charge_type " \
-                "@include(if: $gbChargeType) instance_type @include(if: $gbInstanceType)}}}"
+        operation = "cost_reports"
+        query = "query cost_reports($filters: CostReportsFilters, $group_bys: [CostReportsGroupBy], " \
+                "$period: CostReportsPeriod) {cost_reports(filters: $filters, group_bys: $group_bys, period: $period)" \
+                "{results{day month year account region resource_type product_family pricing_term total_cost}," \
+                "total_count}}"
         variables = {
             "filters": {
                 "from_timestamp": from_timestamp,
                 "to_timestamp": to_timestamp
             },
-            "sort": {
-                "field": "total_direct_cost",
-                "direction": "desc"
-            },
-            "groupBy": [
-                "resource_type", "region", "account"
-            ],
-            "gbResourceId": False,
-            "gbOriginalResourceId": False,
-            "gbLineItemType": False,
-            "gbUsageType": False,
-            "gbResourceType": True,
-            "gbAccount": True,
-            "gbRegion": True,
-            "gbVpc": False,
-            "gbAvailabilityZone": False,
-            "gbDay": False,
-            "gbMonth": False,
-            "gbYear": False,
-            "gbChargeType": False,
-            "gbInstanceType": False,
-            "skip": 0,
-            "limit": 99999
+            "group_bys": [
+                "resource_type", "region", "account", "product_family", "pricing_term"
+            ]
         }
-        if group_by == "day":
-            variables["gbDay"] = True
-            variables["groupBy"].append("day")
-        elif group_by == "month":
-            variables["gbMonth"] = True
-            variables["groupBy"].append("month")
-        elif group_by == "year":
-            variables["gbYear"] = True
-            variables["groupBy"].append("year")
-        return self.graph_query(operation, variables, query)["data"]["cost"]["results"]
+        if group_by:
+            variables["period"] = group_by
+        return self.graph_query(operation, variables, query)["data"]["cost_reports"]["results"]
 
     def get_cost_rules(self):
         """

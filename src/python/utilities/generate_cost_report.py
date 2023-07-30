@@ -34,7 +34,7 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
     print(color("Cost integrated, continuing!", "green"))
 
     print(color(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}", "blue"))
-    cost_chart = graph_client.get_cost_chart(start_ts, end_ts)
+    cost_chart = graph_client.get_cost_chart(start_ts, end_ts, group_by="day")
     print(color("Fetched cost information successfully!", "green"))
 
     csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
