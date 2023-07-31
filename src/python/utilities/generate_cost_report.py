@@ -49,10 +49,11 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         'product_family',
         'account',
         'region',
-        'pricing_term',
-        period,
-        'total_cost'
+        'pricing_term'
     ]
+    if period:
+        fieldnames.append(period)
+    fieldnames.append('total_cost')
 
     print(color(f"Generating CSV file, file name: {csv_file}", "blue"))
     with open(csv_file, mode='w', newline='') as file:
