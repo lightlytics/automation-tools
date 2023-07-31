@@ -15,10 +15,9 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period):
-    if period:
-        if period not in ["day", "month", "year"]:
-            print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
-            sys.exit()
+    if period not in ["day", "month", "year"]:
+        print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
+        sys.exit()
 
     # Setting up variables
     start_ts = start_timestamp + "T00:00:00.000Z"
@@ -79,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--end_timestamp", help="End date for report in Zulu format (YYYY-MM-DD)", required=True)
     parser.add_argument(
-        "--period", help="day/month/year", required=False)
+        "--period", help="day/month/year", required=True)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
          args.ws_name, args.start_timestamp, args.end_timestamp, args.period)
