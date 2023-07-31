@@ -44,15 +44,14 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
     csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
 
     fieldnames = [
+        period,
         'resource_type',
         'product_family',
         'account',
         'region',
-        'pricing_term'
+        'pricing_term',
+        'total_cost'
     ]
-    if period:
-        fieldnames.append(period)
-    fieldnames.append('total_cost')
 
     print(color(f"Generating CSV file, file name: {csv_file}", "blue"))
     with open(csv_file, mode='w', newline='') as file:
