@@ -353,6 +353,18 @@ class GraphCommon(object):
         violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
         return violations
 
+    def get_violation_cost_predicted_savings(self, rule_id, resource_id):
+        """ Get Predicted Savings for a specific rule violation.
+            :returns (int) - Predicted Savings for the violation.
+        """
+        operation = "RuleViolationCost"
+        query = "query RuleViolationCost($rule_id: String, $resource_ids: [String]){resourcePredictedMontlyCost" \
+                "(rule_id: $rule_id, resource_ids: $resource_ids){results{predicted_monthly_cost id __typename}" \
+                "__typename}}"
+        variables = {"rule_id": rule_id, "resource_ids": [resource_id], "skip": False}
+        return self.graph_query(
+            operation, variables, query)['data']['resourcePredictedMontlyCost']['results'][0]['predicted_monthly_cost']
+
     def get_compliance_standards(self):
         """ Get all compliance standards.
             :returns (list) - Available compliance standards.
