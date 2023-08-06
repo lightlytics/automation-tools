@@ -44,7 +44,8 @@ def main(environment, ll_username, ll_password, ws_name):
         'resource_id',
         'account',
         'region',
-        'name'
+        'name',
+        'predicted_monthly_cost_savings'
     ]
 
     with open('data.csv', 'w', newline='') as csvfile:
@@ -56,7 +57,8 @@ def main(environment, ll_username, ll_password, ws_name):
                     'resource_id': violation['resource_id'],
                     'account': violation['account'],
                     'region': violation['region'],
-                    'name': value['name']
+                    'name': value['name'],
+                    'predicted_monthly_cost_savings': violation['predicted_monthly_cost_savings']
                 })
 
 
@@ -66,7 +68,9 @@ def process_violation(violation, graph_client, recommendations, rule):
         recommendations[rule["id"]]["violations"].append({
             "resource_id": violation,
             "account": violation_metadata["account_id"],
-            "region": violation_metadata["region"]
+            "region": violation_metadata["region"],
+            "predicted_monthly_cost_savings":
+                graph_client.get_violation_cost_predicted_savings(rule["id"], violation) or 0
         })
     except TypeError:
         pass
