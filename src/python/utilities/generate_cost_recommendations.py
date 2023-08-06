@@ -40,6 +40,8 @@ def main(environment, ll_username, ll_password, ws_name):
                 concurrent.futures.wait(futures)
             print(color(f"Finished processing violations for rule: {rule['name']}!", "green"))
 
+    csv_file = f'{environment.upper()} cost recommendations.csv'
+
     fieldnames = [
         'resource_id',
         'account',
@@ -48,7 +50,7 @@ def main(environment, ll_username, ll_password, ws_name):
         'predicted_monthly_cost_savings'
     ]
 
-    with open('data.csv', 'w', newline='') as csvfile:
+    with open(csv_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for key, value in recommendations.items():
@@ -60,6 +62,8 @@ def main(environment, ll_username, ll_password, ws_name):
                     'name': value['name'],
                     'predicted_monthly_cost_savings': violation['predicted_monthly_cost_savings']
                 })
+
+    return csv_file
 
 
 def process_violation(violation, graph_client, recommendations, rule):

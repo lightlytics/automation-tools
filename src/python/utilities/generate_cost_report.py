@@ -60,6 +60,8 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         writer.writerows(cost_chart)
     print(color("File generated successfully, export complete!", "green"))
 
+    return csv_file
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
