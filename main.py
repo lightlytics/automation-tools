@@ -21,7 +21,7 @@ async def after_request(request: Request, call_next):
     return response
 
 
-@app.get("/generate_cost_report")
+@app.post("/generate_cost_report")
 def generate_cost_report(payload: Dict[Any, Any]):
     file_name = cost_report.main(
         payload['environment_sub_domain'],
@@ -40,7 +40,7 @@ def generate_cost_report(payload: Dict[Any, Any]):
         return StreamingResponse(iter([csv_file.read()]), headers=headers)
 
 
-@app.get("/generate_cost_recommendations")
+@app.post("/generate_cost_recommendations")
 def generate_cost_recommendations(payload: Dict[Any, Any]):
     file_name = cost_recommendations.main(
         payload['environment_sub_domain'],
