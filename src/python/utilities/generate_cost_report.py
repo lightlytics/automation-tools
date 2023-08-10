@@ -15,7 +15,6 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage):
-
     if period not in ["day", "month", "year"]:
         print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
         sys.exit()
