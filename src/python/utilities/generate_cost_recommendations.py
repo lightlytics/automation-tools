@@ -14,13 +14,15 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name):
+def main(environment, ll_username, ll_password, ws_name, stage):
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com"
+    if stage:
+        ll_url = f"https://{environment}.lightops.io"
     ll_graph_url = f"{ll_url}/graphql"
     graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
     ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, customer_id=ws_id)
+    graph_client.change_client_ws(ws_id)
     print(color("Logged in successfully!", "green"))
 
     print(color("Getting all cost rules", "blue"))
@@ -91,6 +93,8 @@ if __name__ == "__main__":
         "--environment_password", help="The Lightlytics environment password", required=True)
     parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
+    parser.add_argument(
+        "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name)
+         args.ws_name, args.stage)

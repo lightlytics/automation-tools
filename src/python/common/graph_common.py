@@ -459,3 +459,6 @@ class GraphCommon(object):
         else:
             print(f"res: {res}")
             return None
+
+    def change_client_ws(self, ws):
+        self.customer_id = ws

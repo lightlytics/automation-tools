@@ -14,7 +14,8 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period):
+def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage):
+
     if period not in ["day", "month", "year"]:
         print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
         sys.exit()
@@ -25,10 +26,12 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
 
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com"
+    if stage:
+        ll_url = f"https://{environment}.lightops.io"
     ll_graph_url = f"{ll_url}/graphql"
     graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
     ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, customer_id=ws_id)
+    graph_client.change_client_ws(ws_id)
     print(color("Logged in successfully!", "green"))
 
     print(color(f"Checking if cost is integrated in WS: {ws_name}", "blue"))
@@ -80,6 +83,8 @@ if __name__ == "__main__":
         "--end_timestamp", help="End date for report in Zulu format (YYYY-MM-DD)", required=True)
     parser.add_argument(
         "--period", help="day/month/year", required=True)
+    parser.add_argument(
+        "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.start_timestamp, args.end_timestamp, args.period)
+         args.ws_name, args.start_timestamp, args.end_timestamp, args.period, args.stage)
