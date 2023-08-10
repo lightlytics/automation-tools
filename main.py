@@ -30,7 +30,8 @@ def generate_cost_report(payload: Dict[Any, Any]):
         payload['ws_name'],
         payload['start_timestamp'],
         payload['end_timestamp'],
-        payload['period']
+        payload['period'],
+        payload['stage'] or None
     )
     headers = {
         'Content-Type': 'text/csv',
@@ -46,7 +47,8 @@ def generate_cost_recommendations(payload: Dict[Any, Any]):
         payload['environment_sub_domain'],
         payload['environment_user_name'],
         payload['environment_password'],
-        payload['ws_name']
+        payload['ws_name'],
+        payload['stage'] or None
     )
     headers = {
         'Content-Type': 'text/csv',
