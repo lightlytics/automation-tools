@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name, stage):
+def main(environment, ll_username, ll_password, ws_name, stage=None):
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com"
     if stage:

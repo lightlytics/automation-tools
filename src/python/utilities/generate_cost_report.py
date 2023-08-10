@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage):
+def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
     if period not in ["day", "month", "year"]:
         print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
         sys.exit()

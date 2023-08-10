@@ -23,16 +23,11 @@ async def after_request(request: Request, call_next):
 
 @app.post("/generate_cost_report")
 def generate_cost_report(payload: Dict[Any, Any]):
-    file_name = cost_report.main(
-        payload['environment_sub_domain'],
-        payload['environment_user_name'],
-        payload['environment_password'],
-        payload['ws_name'],
-        payload['start_timestamp'],
-        payload['end_timestamp'],
-        payload['period'],
-        payload['stage'] or None
-    )
+    arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
+                 payload['ws_name'], payload['start_timestamp'], payload['end_timestamp'], payload['period']]
+    if 'stage' in payload:
+        arguments.append(payload['stage'])
+    file_name = cost_report.main(*arguments)
     headers = {
         'Content-Type': 'text/csv',
         'Content-Disposition': f'attachment; filename="{file_name}"'
@@ -43,13 +38,11 @@ def generate_cost_report(payload: Dict[Any, Any]):
 
 @app.post("/generate_cost_recommendations")
 def generate_cost_recommendations(payload: Dict[Any, Any]):
-    file_name = cost_recommendations.main(
-        payload['environment_sub_domain'],
-        payload['environment_user_name'],
-        payload['environment_password'],
-        payload['ws_name'],
-        payload['stage'] or None
-    )
+    arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
+                 payload['ws_name']]
+    if 'stage' in payload:
+        arguments.append(payload['stage'])
+    file_name = cost_recommendations.main(*arguments)
     headers = {
         'Content-Type': 'text/csv',
         'Content-Disposition': f'attachment; filename="{file_name}"'
