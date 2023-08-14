@@ -353,6 +353,16 @@ class GraphCommon(object):
         violations = self.graph_query(operation, variables, query)['data']['ruleViolations']['results']
         return violations
 
+    def export_csv_rule(self, rule_id):
+        """ Get CSV formatted data regarding rule violations.
+            :returns (csv) - Rule violations.
+        """
+        operation = "RuleViolationsCsv"
+        query = "query RuleViolationsCsv($rule_id: ID!){ruleCsv(rule_id: $rule_id){rule_name description category " \
+                "severity labels compliance date violation_count violations{resource_id resource_name resource_type " \
+                "account_display_name account_id region vpc_id tags monthly_cost __typename}__typename}}"
+        return self.graph_query(operation, {"rule_id": rule_id}, query)['data']['ruleCsv']
+
     def get_violation_cost_predicted_savings(self, rule_id, resource_id):
         """ Get Predicted Savings for a specific rule violation.
             :returns (int) - Predicted Savings for the violation.

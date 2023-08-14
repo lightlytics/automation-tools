@@ -29,18 +29,14 @@ def main(environment, ll_username, ll_password, ws_name, stage=None):
     cost_rules = graph_client.get_cost_rules()
     print(color(f"Found {len(cost_rules)} cost rules!", "green"))
 
+    print(color(f"Processing cost rules violations", "blue"))
     recommendations = {}
-    for rule in cost_rules:
-        violations = graph_client.get_rule_violations(rule["id"])
-        if len(violations) > 0:
-            print(color(f"Processing {len(violations)} violations for rule: {rule['name']}", "blue"))
-            recommendations[rule["id"]] = {"name": rule["name"]}
-            recommendations[rule["id"]]["violations"] = []
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = [executor.submit(process_violation, violation, graph_client, recommendations, rule)
-                           for violation in violations]
-                concurrent.futures.wait(futures)
-            print(color(f"Finished processing violations for rule: {rule['name']}!", "green"))
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(get_recommendations, rule_id, graph_client, recommendations) for rule_id in
+                   [r["id"] for r in cost_rules]]
+        for future in futures:
+            future.result()
+    print(color(f"Finished processing cost rules violations successfully!", "green"))
 
     csv_file = f'{environment.upper()} cost recommendations.csv'
 
@@ -59,27 +55,21 @@ def main(environment, ll_username, ll_password, ws_name, stage=None):
             for violation in value['violations']:
                 writer.writerow({
                     'resource_id': violation['resource_id'],
-                    'account': violation['account'],
+                    'account': violation['account_id'],
                     'region': violation['region'],
                     'name': value['name'],
-                    'predicted_monthly_cost_savings': violation['predicted_monthly_cost_savings']
+                    'predicted_monthly_cost_savings': violation['monthly_cost'] or 0
                 })
 
     return csv_file
 
 
-def process_violation(violation, graph_client, recommendations, rule):
-    try:
-        violation_metadata = graph_client.get_resource_metadata(violation)
-        recommendations[rule["id"]]["violations"].append({
-            "resource_id": violation,
-            "account": violation_metadata["account_id"],
-            "region": violation_metadata["region"],
-            "predicted_monthly_cost_savings":
-                graph_client.get_violation_cost_predicted_savings(rule["id"], violation) or 0
-        })
-    except TypeError:
-        pass
+def get_recommendations(rule_id, graph_client, recommendations):
+    res = graph_client.export_csv_rule(rule_id)
+    if res:
+        print(color(f"Found {res['violation_count']} violations in rule: {res['rule_name']}", "blue"))
+        recommendations[rule_id] = {"name": res["rule_name"]}
+        recommendations[rule_id]["violations"] = res["violations"]
 
 
 if __name__ == "__main__":
