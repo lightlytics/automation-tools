@@ -29,7 +29,7 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts, l
     ll_graph_url = f"{ll_url}/graphql"
     graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
     ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, customer_id=ws_id)
+    graph_client.change_client_ws(ws_id)
     print(color("Logged in successfully!", "green"))
 
     print(color(f"Verifying that '{compliance}' compliance standard exist", "blue"))
