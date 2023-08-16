@@ -1,41 +1,31 @@
 import os
 import uvicorn
-from fastapi import FastAPI, Request, Response, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse, FileResponse
 from typing import Dict, Any
 from src.python.common.logger import Logger
+from starlette.background import BackgroundTasks
 app = FastAPI()
 log = Logger().get_logger()
 
 from src.python.utilities import generate_cost_report as cost_report
 from src.python.utilities import generate_cost_recommendations as cost_recommendations
-
-
-@app.middleware("http")
-async def after_request(request: Request, call_next):
-    response: Response = await call_next(request)
-    log.info(f"Cleaning up CSV files from the main directory")
-    directory = os.getcwd()
-    files = os.listdir(directory)
-    for f in files:
-        if f.endswith(".csv"):
-            os.remove(os.path.join(directory, f))
-    return response
+from src.python.utilities import generate_compliance_report as compliance_report
 
 
 @app.post("/generate_cost_report")
-def generate_cost_report(payload: Dict[Any, Any]):
-    log.info(f"Generate Cost Report requested - {payload['environment_sub_domain']}")
+def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Generate Cost Report requested - {payload['environment_sub_domain']}")
     arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
-                 payload['ws_name'], payload['start_timestamp'], payload['end_timestamp'], payload['period']]
-    if 'stage' in payload:
-        arguments.append(payload['stage'])
+                 payload['ws_name'], payload['start_timestamp'], payload['end_timestamp'], payload['period'],
+                 payload.get('stage', None)]
     try:
         file_name = cost_report.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'
         }
+        background_tasks.add_task(remove_file, file_name)
         with open(file_name) as csv_file:
             return StreamingResponse(iter([csv_file.read()]), headers=headers)
     except Exception as e:
@@ -43,22 +33,41 @@ def generate_cost_report(payload: Dict[Any, Any]):
 
 
 @app.post("/generate_cost_recommendations")
-def generate_cost_recommendations(payload: Dict[Any, Any]):
-    log.info(f"Generate Cost Recommendations requested - {payload['environment_sub_domain']}")
+def generate_cost_recommendations(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Generate Cost Recommendations requested - {payload['environment_sub_domain']}")
     arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
-                 payload['ws_name']]
-    if 'stage' in payload:
-        arguments.append(payload['stage'])
+                 payload['ws_name'], payload.get('stage', None)]
     try:
         file_name = cost_recommendations.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'
         }
+        background_tasks.add_task(remove_file, file_name)
         with open(file_name) as csv_file:
             return StreamingResponse(iter([csv_file.read()]), headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate_compliance_report")
+async def generate_compliance_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Generate Compliance Report requested - {payload['environment_sub_domain']}")
+    arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
+                 payload['ws_name'], payload['compliance_standard'],
+                 payload.get('accounts', None), payload.get('label', None), payload.get('stage', None)]
+    try:
+        file_name = compliance_report.main(*arguments)
+        headers = {'Content-Disposition': f'attachment; filename="{file_name}"'}
+        background_tasks.add_task(remove_file, file_name)
+        return FileResponse(file_name, headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def remove_file(path: str) -> None:
+    log.info(f'Removing file "{path}"')
+    os.unlink(path)
 
 
 if __name__ == "__main__":
