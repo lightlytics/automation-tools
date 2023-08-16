@@ -2,46 +2,38 @@ import argparse
 import csv
 import os
 import sys
-from termcolor import colored as color
 
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 except ModuleNotFoundError:
     sys.path.append("../../..")
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
     if period not in ["day", "month", "year"]:
-        print(color(f"Wrong period value: {period}! available values: 'day', 'month', 'year'", "red"))
+        log.error(f"Wrong period value: {period}! available values: 'day', 'month', 'year'")
         sys.exit()
 
     # Setting up variables
     start_ts = start_timestamp + "T00:00:00.000Z"
     end_ts = end_timestamp + "T23:59:59.999Z"
 
-    print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com"
-    if stage:
-        ll_url = f"https://{environment}.lightops.io"
-    ll_graph_url = f"{ll_url}/graphql"
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
-    ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client.change_client_ws(ws_id)
-    print(color("Logged in successfully!", "green"))
+    # Connecting to Lightlytics
+    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
-    print(color(f"Checking if cost is integrated in WS: {ws_name}", "blue"))
+    log.info(f"Checking if cost is integrated in WS: {ws_name}")
     if not graph_client.check_cost_integration():
-        print(color("Cost is not integrated in the workspace, exiting", "red"))
+        log.error("Cost is not integrated in the workspace, exiting")
         sys.exit()
-    print(color("Cost integrated, continuing!", "green"))
+    log.info("Cost integrated, continuing!")
 
-    print(color(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}", "blue"))
+    log.info(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}")
     cost_chart = graph_client.get_cost_chart(start_ts, end_ts, group_by=period)
-    print(color("Fetched cost information successfully!", "green"))
+    log.info("Fetched cost information successfully!")
 
     csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
 
@@ -55,12 +47,12 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         'total_cost'
     ]
 
-    print(color(f"Generating CSV file, file name: {csv_file}", "blue"))
+    log.info(f'Generating CSV file, file name: "{csv_file}"')
     with open(csv_file, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(cost_chart)
-    print(color("File generated successfully, export complete!", "green"))
+    log.info("File generated successfully, export complete!")
 
     return csv_file
 

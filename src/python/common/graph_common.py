@@ -38,7 +38,8 @@ class GraphCommon(object):
             self.token = 'Bearer ' + eval_res['data']['login']['access_token']
             return self.token
         else:
-            raise Exception(f"Could not get token, error: {res.text}")
+            err = res.text
+            raise Exception(json.loads(str(err))['errors'][0]['message'])
 
     def get_customer_id(self, email=None, pw=None, token=None):
         """ Get customer id from graph.

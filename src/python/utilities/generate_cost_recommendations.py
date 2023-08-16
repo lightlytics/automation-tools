@@ -3,40 +3,32 @@ import concurrent.futures
 import csv
 import os
 import sys
-from termcolor import colored as color
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 except ModuleNotFoundError:
     sys.path.append("../../..")
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 
 
 def main(environment, ll_username, ll_password, ws_name, stage=None):
-    print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com"
-    if stage:
-        ll_url = f"https://{environment}.lightops.io"
-    ll_graph_url = f"{ll_url}/graphql"
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
-    ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client.change_client_ws(ws_id)
-    print(color("Logged in successfully!", "green"))
+    # Connecting to Lightlytics
+    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
-    print(color("Getting all cost rules", "blue"))
+    log.info("Getting all cost rules")
     cost_rules = graph_client.get_cost_rules()
-    print(color(f"Found {len(cost_rules)} cost rules!", "green"))
+    log.info(f"Found {len(cost_rules)} cost rules!")
 
-    print(color(f"Processing cost rules violations", "blue"))
+    log.info(f"Processing cost rules violations")
     recommendations = {}
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [executor.submit(get_recommendations, rule_id, graph_client, recommendations) for rule_id in
                    [r["id"] for r in cost_rules]]
         for future in futures:
             future.result()
-    print(color(f"Finished processing cost rules violations successfully!", "green"))
+    log.info(f"Finished processing cost rules violations successfully!")
 
     csv_file = f'{environment.upper()} cost recommendations.csv'
 
@@ -48,6 +40,7 @@ def main(environment, ll_username, ll_password, ws_name, stage=None):
         'predicted_monthly_cost_savings'
     ]
 
+    log.info(f'Generating CSV file, file name: "{csv_file}"')
     with open(csv_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -60,6 +53,7 @@ def main(environment, ll_username, ll_password, ws_name, stage=None):
                     'name': value['name'],
                     'predicted_monthly_cost_savings': violation['monthly_cost'] or 0
                 })
+    log.info("File generated successfully, export complete!")
 
     return csv_file
 
@@ -67,7 +61,7 @@ def main(environment, ll_username, ll_password, ws_name, stage=None):
 def get_recommendations(rule_id, graph_client, recommendations):
     res = graph_client.export_csv_rule(rule_id)
     if res:
-        print(color(f"Found {res['violation_count']} violations in rule: {res['rule_name']}", "blue"))
+        log.info(f"Found {res['violation_count']} violations in rule: {res['rule_name']}")
         recommendations[rule_id] = {"name": res["rule_name"]}
         recommendations[rule_id]["violations"] = res["violations"]
 
