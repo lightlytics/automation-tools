@@ -4,44 +4,37 @@ import csv
 import os
 import sys
 
-from termcolor import colored as color
-
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 try:
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 except ModuleNotFoundError:
     sys.path.append("../../..")
-    from src.python.common.graph_common import GraphCommon
+    from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ws_name, resource_type, tags, accounts):
+def main(environment, ll_username, ll_password, ws_name, resource_type, accounts=None, tags=None, stage=None):
     # Setting up variables
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
-    print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com"
-    ll_graph_url = f"{ll_url}/graphql"
-    graph_client = GraphCommon(ll_graph_url, ll_username, ll_password)
-    ws_id = graph_client.get_ws_id_by_name(ws_name)
-    graph_client.change_client_ws(ws_id)
-    print(color("Logged in successfully!", "green"))
+    # Connecting to Lightlytics
+    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
-    print(color("Get all accounts", "blue"))
+    log.info("Get all accounts")
     all_accounts = [a['cloud_account_id'] for a in graph_client.get_accounts()]
-    print(color(f"Found {len(all_accounts)} account in workspace: {ws_name}", "green"))
+    log.info(f"Found {len(all_accounts)} account in workspace: {ws_name}")
 
     if accounts:
-        print(color("Filtering accounts according to provided argument", "blue"))
+        log.info("Filtering accounts according to provided argument")
         all_accounts = [a for a in all_accounts if a in accounts]
-        print(color(f"{len(all_accounts)} accounts remained", "green"))
+        log.info(f"{len(all_accounts)} accounts remained")
 
     report_details = {
         "environment_name": environment.upper(),
         "environment_workspace": ws_name,
-        "ws_id": ws_id,
-        "ll_url": ll_url,
+        "ws_id": graph_client.customer_id,
+        "ll_url": graph_client.url,
         "accounts": {}
     }
 
@@ -51,7 +44,7 @@ def main(environment, ll_username, ll_password, ws_name, resource_type, tags, ac
         for tag in tags:
             parsed_tags.append(process_tag(tag))
 
-    print(color("Searching resources in each account", "blue"))
+    log.info("Searching resources in each account")
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future_account_mapping = {}
         futures = []
@@ -62,11 +55,12 @@ def main(environment, ll_username, ll_password, ws_name, resource_type, tags, ac
         for future in futures:
             account = future_account_mapping[future]
             report_details["accounts"][account] = future.result()
-    print(color("Finished adding resources!", "green"))
+    log.info("Finished adding resources!")
+    log.info(f'Found {sum([len(r) for r in report_details["accounts"].values()])} resources of type "{resource_type}"')
 
-    csv_file = 'Lightlytics inventory export.csv'
+    csv_file = f'Lightlytics inventory export - {environment}.csv'
 
-    print(color(f"Generating CSV file, file name: {csv_file}", "blue"))
+    log.info(f"Generating CSV file, file name: {csv_file}")
     with open(csv_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['Account', 'ID'])
@@ -74,7 +68,9 @@ def main(environment, ll_username, ll_password, ws_name, resource_type, tags, ac
             for resource in resources:
                 resource_id = resource['id']
                 writer.writerow([account, resource_id])
-    print(color("File generated successfully, export complete!", "green"))
+    log.info("File generated successfully, export complete!")
+
+    return csv_file
 
 
 def process_tag(tag):
@@ -110,11 +106,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--resource_type", help="The required resource to return", required=True)
     parser.add_argument(
+        "--accounts", help="Accounts list to iterate when creating the report", required=False)
+    parser.add_argument(
         "--tags", help="Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics', "
                        "the '~=' means 'contains' instead of 'equal' operand, tags divided by ','",
         required=False)
     parser.add_argument(
-        "--accounts", help="Accounts list to iterate when creating the report", required=False)
+        "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.resource_type, args.tags, args.accounts)
+         args.ws_name, args.resource_type, args.accounts, args.tags, args.stage)

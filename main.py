@@ -11,6 +11,7 @@ log = Logger().get_logger()
 from src.python.utilities import generate_cost_report as cost_report
 from src.python.utilities import generate_cost_recommendations as cost_recommendations
 from src.python.utilities import generate_compliance_report as compliance_report
+from src.python.utilities import export_inventory as export_inventory
 
 
 @app.post("/generate_cost_report")
@@ -61,6 +62,25 @@ async def generate_compliance_report(payload: Dict[Any, Any], background_tasks: 
         headers = {'Content-Disposition': f'attachment; filename="{file_name}"'}
         background_tasks.add_task(remove_file, file_name)
         return FileResponse(file_name, headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate_export_inventory")
+def generate_export_inventory(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Export inventory requested - {payload['environment_sub_domain']}")
+    arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
+                 payload['ws_name'], payload['resource_type'],
+                 payload.get('accounts', None), payload.get('tags', None), payload.get('stage', None)]
+    try:
+        file_name = export_inventory.main(*arguments)
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="{file_name}"'
+        }
+        background_tasks.add_task(remove_file, file_name)
+        with open(file_name) as csv_file:
+            return StreamingResponse(iter([csv_file.read()]), headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
