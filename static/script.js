@@ -7,19 +7,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Default shared parameters
     const defaultParameters = [
-        { name: "environment_sub_domain", type: "text", placeholder: "Enter Sub Domain" },
-        { name: "environment_user_name", type: "text", placeholder: "Enter User Name" },
-        { name: "environment_password", type: "password", placeholder: "Enter Password" },
-        { name: "ws_name", type: "text", placeholder: "Enter WS Name" }
+        { name: "environment_sub_domain", type: "text", placeholder: "Enter Sub Domain", required: true },
+        { name: "environment_user_name", type: "text", placeholder: "Enter User Name", required: true },
+        { name: "environment_password", type: "password", placeholder: "Enter Password", required: true },
+        { name: "ws_name", type: "text", placeholder: "Enter WS Name", required: true }
     ];
 
     // Unique parameters for each endpoint
     const apiParameters = {
         "/generate_cost_report": [
             ...defaultParameters,
-            { name: "start_timestamp", type: "date" },
-            { name: "end_timestamp", type: "date" },
-            { name: "period", type: "text", placeholder: "day/month/year" },
+            { name: "start_timestamp", type: "date", required: true },
+            { name: "end_timestamp", type: "date", required: true },
+            { name: "period", type: "text", placeholder: "day/month/year", required: true },
             { name: "stage", type: "text", placeholder: "Leave Blank" }
         ],
         "/generate_cost_recommendations": [
@@ -28,14 +28,14 @@ document.addEventListener("DOMContentLoaded", function () {
         ],
         "/generate_compliance_report": [
             ...defaultParameters,
-            { name: "compliance_standard", type: "text", placeholder: "Choose Compliance Standard" },
+            { name: "compliance_standard", type: "text", placeholder: "Choose Compliance Standard", required: true },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "label", type: "text", placeholder: "Not mandatory, Add a specific label" },
             { name: "stage", type: "text", placeholder: "Leave Blank" }
         ],
         "/generate_export_inventory": [
             ...defaultParameters,
-            { name: "resource_type", type: "text", placeholder: "Resource Type, e.g: 'instance', 'security_group'" },
+            { name: "resource_type", type: "text", placeholder: "Resource Type, e.g: 'instance', 'security_group'", required: true },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" },
             { name: "stage", type: "text", placeholder: "Leave Blank" }
@@ -43,15 +43,18 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // Function to generate input boxes for the selected parameters
-    function generateInputBoxes(parameters) {
+    function populateParameterLabels(parameters) {
         parameterFields.innerHTML = ""; // Clear existing parameter fields
 
         parameters.forEach(parameter => {
             const inputGroup = document.createElement("div");
             inputGroup.classList.add("mb-3");
+
+            const requiredAttribute = parameter.required ? "required" : ""; // Add required attribute if needed
+
             inputGroup.innerHTML = `
-                <label for="${parameter.name}" class="form-label">${parameter.name}</label>
-                <input type="${parameter.type}" class="form-control" id="${parameter.name}" name="${parameter.name}" placeholder="${parameter.placeholder}">
+                <label for="${parameter.name}" class="form-label">${parameterDisplayNames[parameter.name]}</label>
+                <input type="${parameter.type}" class="form-control" id="${parameter.name}" name="${parameter.name}" placeholder="${parameter.placeholder}" ${requiredAttribute}>
             `;
             parameterFields.appendChild(inputGroup);
         });
@@ -74,9 +77,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Add event listener for API endpoint change
     apiEndpointSelect.addEventListener("change", function () {
         const selectedParameters = apiParameters[this.value];
-        generateInputBoxes(selectedParameters);
+        populateParameterLabels(selectedParameters);
     });
-
     // Add event listener for form submission
     apiForm.addEventListener("submit", async function (event) {
         event.preventDefault();
@@ -161,3 +163,19 @@ async function playLottieAnimation() {
         return null;
     }
 }
+
+const parameterDisplayNames = {
+    "environment_sub_domain": "Environment Sub-Domain (<strong>xyz</strong>.lightlytics.com)",
+    "environment_user_name": "Environment User Name (Email)",
+    "environment_password": "Environment Password",
+    "ws_name": "Workspace Name",
+    "start_timestamp": "Start Date",
+    "end_timestamp": "End Date",
+    "period": "Period (day/month/year)",
+    "accounts": "Selected Accounts",
+    "tags": "Selected Tags",
+    "compliance_standard": "Compliance Standard to use",
+    "label": "Label to use",
+    "resource_type": "Resource Type",
+    "stage": "Stage"
+};
