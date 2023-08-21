@@ -15,8 +15,9 @@ except ModuleNotFoundError:
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
     if period not in ["day", "month", "year"]:
-        log.error(f"Wrong period value: {period}! available values: 'day', 'month', 'year'")
-        sys.exit()
+        msg = f"Wrong period value: {period}! available values: 'day', 'month', 'year'"
+        log.error(msg)
+        raise Exception(msg)
 
     # Setting up variables
     start_ts = start_timestamp + "T00:00:00.000Z"
@@ -27,8 +28,9 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
 
     log.info(f"Checking if cost is integrated in WS: {ws_name}")
     if not graph_client.check_cost_integration():
-        log.error("Cost is not integrated in the workspace, exiting")
-        sys.exit()
+        msg = "Cost is not integrated in the workspace, exiting"
+        log.error(msg)
+        raise Exception(msg)
     log.info("Cost integrated, continuing!")
 
     log.info(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}")

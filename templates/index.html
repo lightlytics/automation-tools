@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="container-fluid p-0">
-        <div class="jumbotron jumbotron-fluid bg-primary text-white mb-0" style="height:80px;">
+        <div class="jumbotron jumbotron-fluid bg-dark text-white mb-0" style="height:80px;">
             <div class="container">
                 <h1 class="display-4 font-weight-bold">Lightlytics External Tools</h1>
             </div>
@@ -15,7 +15,7 @@
         <div class="container mt-5">
             <form id="apiForm" method="POST">
                 <div class="mb-3">
-                    <label for="apiEndpoint" class="form-label">API Endpoint</label>
+                    <label for="apiEndpoint" class="form-label"><strong>Select API</strong></label>
                     <select class="form-select" id="apiEndpoint" name="apiEndpoint">
                         <option value="/generate_cost_report">Generate Cost Report</option>
                         <option value="/generate_cost_recommendations">Generate Cost Recommendations</option>
@@ -26,7 +26,7 @@
                 <div id="parameterFields" class="mb-3">
                     <!-- Input boxes for API parameters will be added dynamically here -->
                 </div>
-                <button type="submit" class="btn btn-primary" id="submitButton">Submit</button>
+                <button type="submit" class="btn btn-dark" id="submitButton">Submit</button>
             </form>
             <div class="mt-4">
                 <pre id="responseOutput"></pre>
@@ -34,10 +34,12 @@
         </div>
     </div>
 
-    <div id="loadingOverlay" class="d-none justify-content-center align-items-center"> <!-- Add the Bootstrap classes -->
-        <div id="loadingIndicator"></div>
+    <div id="loadingOverlay" class="d-none justify-content-center align-items-center">
+        <div id="lottieContainer" style="width: 100px; height: 100px;"></div>
     </div>
 
     <script src="/static/script.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.7.4/lottie.min.js"></script>
+
 </body>
 </html>

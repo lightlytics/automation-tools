@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", function () {
             ...defaultParameters,
             { name: "resource_type", type: "text", placeholder: "Resource Type, e.g: 'instance', 'security_group'" },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
-            { name: "accounts", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" },
+            { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" },
             { name: "stage", type: "text", placeholder: "Leave Blank" }
         ]
     };
@@ -87,6 +87,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const endpoint = apiEndpointSelect.value;
         const requestData = constructPayload();
 
+        // Load and play the Lottie animation
+        playLottieAnimation();
+
         try {
             const response = await fetch(endpoint, {
                 method: "POST",
@@ -117,6 +120,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 link.click();
             }
         } finally {
+            if (animation) {
+                animation.destroy(); // Stop the animation
+                animation = null; // Reset animation variable
+            }
             loadingOverlay.classList.add("d-none");
             submitButton.disabled = false;
         }
@@ -125,3 +132,32 @@ document.addEventListener("DOMContentLoaded", function () {
     // Trigger the API endpoint change event to load initial parameters
     apiEndpointSelect.dispatchEvent(new Event("change"));
 });
+
+// Define the animation variable outside the event handler
+let animation = null;
+
+// Load and play the Lottie animation
+async function playLottieAnimation() {
+    if (animation) {
+        return animation; // Animation is already playing, return it
+    }
+
+    try {
+        const response = await fetch("/static/spinner.json");
+        const animationConfig = await response.json();
+
+        const lottieContainer = document.getElementById("lottieContainer");
+        animation = lottie.loadAnimation({
+            container: lottieContainer,
+            renderer: "svg",
+            loop: true,
+            autoplay: true,
+            animationData: animationConfig
+        });
+
+        return animation;
+    } catch (error) {
+        console.error("Error loading animation configuration:", error);
+        return null;
+    }
+}
