@@ -115,6 +115,8 @@ document.addEventListener("DOMContentLoaded", function () {
     apiForm.addEventListener("submit", async function (event) {
         event.preventDefault();
 
+        document.getElementById("responseOutput").classList.add("d-none")
+
         submitButton.disabled = true;
         loadingOverlay.classList.remove("d-none");
 
@@ -144,8 +146,18 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (contentType.includes("application/json")) {
-                const responseData = await response.text();
-                document.getElementById("responseOutput").textContent = responseData;
+                try {
+                    const responseData = await response.json();
+                    document.getElementById("responseOutput").classList.remove("d-none")
+                    if (responseData.detail) {
+                        document.getElementById("responseOutput").textContent = responseData.detail;
+                    } else {
+                        document.getElementById("responseOutput").textContent = JSON.stringify(responseData, null, 2);
+                    }
+                } catch (error) {
+                    console.error("Error parsing JSON response:", error);
+                    document.getElementById("responseOutput").textContent = "An error occurred while processing the response.";
+                }
             } else {
                 const responseBlob = await response.blob();
                 const link = document.createElement("a");
