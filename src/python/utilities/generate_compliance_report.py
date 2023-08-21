@@ -43,9 +43,8 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts=No
         log.info(f"Verifying that this label exist: '{label}'")
         all_labels = list(set(itertools.chain.from_iterable([c["labels"] for c in compliance_rules])))
         if label not in all_labels:
-            err_msg = f"Can't find label: '{label}'"
+            err_msg = f"Can't find label: '{label}', available labels: {all_labels}"
             log.error(err_msg)
-            log.info(f"Available labels: {all_labels}")
             raise Exception(err_msg)
         else:
             log.info(f"Filtering rules using this label: '{label}'")

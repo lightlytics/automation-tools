@@ -28,7 +28,13 @@ document.addEventListener("DOMContentLoaded", function () {
         ],
         "/generate_compliance_report": [
             ...defaultParameters,
-            { name: "compliance_standard", type: "text", placeholder: "Choose Compliance Standard", required: true },
+            {
+                name: "compliance_standard",
+                type: "select",
+                options: ['MAS', 'CIS 8', 'AWS Foundational Security Best Practices Controls', 'PCI DSS', 'CSA CCM', 'NIST4', 'SOC2', 'ISO 27701', 'FedRAMP', 'NIST 800-53', 'EKS CIS', 'FTR', 'NIST-CSF', 'AWS Well-Architected Framework', 'HITRUST', 'GDPR', 'CISAWSF', 'CCPA', 'ISO 27001', 'CIS', 'HIPAA', 'PCI', 'APRA'],
+                placeholder: "Choose Compliance Standard",
+                required: true
+            },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "label", type: "text", placeholder: "Not mandatory, Add a specific label" },
             { name: "stage", type: "text", placeholder: "Leave Blank" }
@@ -42,20 +48,46 @@ document.addEventListener("DOMContentLoaded", function () {
         ]
     };
 
-    // Function to generate input boxes for the selected parameters
-    function populateParameterLabels(parameters) {
+    // Function to populate parameter labels and input fields
+    function populateParameterLabels(selectedParameters) {
         parameterFields.innerHTML = ""; // Clear existing parameter fields
 
-        parameters.forEach(parameter => {
+        selectedParameters.forEach(parameter => {
             const inputGroup = document.createElement("div");
             inputGroup.classList.add("mb-3");
 
-            const requiredAttribute = parameter.required ? "required" : ""; // Add required attribute if needed
+            if (parameter.type === "select") {
+                const selectElement = document.createElement("select");
+                selectElement.classList.add("form-select");
+                selectElement.id = parameter.name;
+                selectElement.name = parameter.name;
+                selectElement.required = parameter.required || false;
 
-            inputGroup.innerHTML = `
-                <label for="${parameter.name}" class="form-label">${parameterDisplayNames[parameter.name]}</label>
-                <input type="${parameter.type}" class="form-control" id="${parameter.name}" name="${parameter.name}" placeholder="${parameter.placeholder}" ${requiredAttribute}>
-            `;
+                const defaultOption = document.createElement("option");
+                defaultOption.value = "";
+                defaultOption.textContent = parameter.placeholder;
+                selectElement.appendChild(defaultOption);
+
+                parameter.options.forEach(optionValue => {
+                    const option = document.createElement("option");
+                    option.value = optionValue;
+                    option.textContent = optionValue;
+                    selectElement.appendChild(option);
+                });
+
+                const displayName = parameterDisplayNames[parameter.name] || parameter.displayName || parameter.name;
+                inputGroup.innerHTML = `
+                    <label for="${parameter.name}" class="form-label">${displayName}</label>
+                `;
+                inputGroup.appendChild(selectElement);
+            } else {
+                const displayName = parameterDisplayNames[parameter.name] || parameter.name;
+                inputGroup.innerHTML = `
+                    <label for="${parameter.name}" class="form-label">${displayName}</label>
+                    <input type="${parameter.type}" class="form-control" id="${parameter.name}" name="${parameter.name}" placeholder="${parameter.placeholder}" ${parameter.required ? "required" : ""}>
+                `;
+            }
+
             parameterFields.appendChild(inputGroup);
         });
     }
