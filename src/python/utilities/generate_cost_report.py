@@ -2,6 +2,7 @@ import argparse
 import csv
 import os
 import sys
+from datetime import datetime
 
 
 # Add the project root directory to the Python path
@@ -14,21 +15,29 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
-    if period not in ["day", "month", "year"]:
-        log.error(f"Wrong period value: {period}! available values: 'day', 'month', 'year'")
-        sys.exit()
+    for date_to_check in [start_timestamp, end_timestamp]:
+        if verify_date_format(date_to_check):
+            print("Date is in the correct format.")
+        else:
+            raise ValueError(f"The date: {date_to_check} is not in the correct format: YYYY-MM-DD")
 
     # Setting up variables
     start_ts = start_timestamp + "T00:00:00.000Z"
     end_ts = end_timestamp + "T23:59:59.999Z"
+
+    if period not in ["day", "month", "year"]:
+        msg = f"Wrong period value: {period}! available values: 'day', 'month', 'year'"
+        log.error(msg)
+        raise Exception(msg)
 
     # Connecting to Lightlytics
     graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
     log.info(f"Checking if cost is integrated in WS: {ws_name}")
     if not graph_client.check_cost_integration():
-        log.error("Cost is not integrated in the workspace, exiting")
-        sys.exit()
+        msg = "Cost is not integrated in the workspace, exiting"
+        log.error(msg)
+        raise Exception(msg)
     log.info("Cost integrated, continuing!")
 
     log.info(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}")
@@ -55,6 +64,15 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
     log.info("File generated successfully, export complete!")
 
     return csv_file
+
+
+def verify_date_format(date_string):
+    try:
+        # Attempt to parse the date string using the specified format
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True  # Date is in the correct format
+    except ValueError:
+        return False  # Date is not in the correct format
 
 
 if __name__ == "__main__":

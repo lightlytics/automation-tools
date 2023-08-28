@@ -432,6 +432,15 @@ class GraphCommon(object):
         all_rules = self.graph_query(operation, {}, query)["data"]["rules"]["results"]
         return [r for r in all_rules if r["category"] == "Cost" and r["status"] == "active"]
 
+    def get_recommendations_history_by_date(self, req_date):
+        """
+        Get recommendations history by date.
+        :param req_date (str)   - Date; format - YYYY/MM/YY.
+        :returns (dict)         - Recommendations history.
+        """
+        query = "query ($date: String){costViolationsHistory(date:$date)}"
+        return self.graph_query(None, {"date": req_date}, query)['data']['costViolationsHistory']['data']
+
     # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):

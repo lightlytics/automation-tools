@@ -29,9 +29,9 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts=No
     log.info(f"Verifying that '{compliance}' compliance standard exist")
     compliance_list = graph_client.get_compliance_standards()
     if compliance not in compliance_list:
-        log.error(f'Compliance "{compliance}" not found')
-        log.info(f"Available compliance standards: {compliance_list}")
-        raise Exception(f"Unsupported compliance standard: {compliance}")
+        msg = f'Compliance "{compliance}" not found, available compliance standards: {compliance_list}'
+        log.error(msg)
+        raise Exception(msg)
     log.info("Compliance standard OK!")
 
     log.info(f"Getting all compliance rules")
@@ -43,9 +43,8 @@ def main(environment, ll_username, ll_password, ws_name, compliance, accounts=No
         log.info(f"Verifying that this label exist: '{label}'")
         all_labels = list(set(itertools.chain.from_iterable([c["labels"] for c in compliance_rules])))
         if label not in all_labels:
-            err_msg = f"Can't find label: '{label}'"
+            err_msg = f"Can't find label: '{label}', available labels: {all_labels}"
             log.error(err_msg)
-            log.info(f"Available labels: {all_labels}")
             raise Exception(err_msg)
         else:
             log.info(f"Filtering rules using this label: '{label}'")

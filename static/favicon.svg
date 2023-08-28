@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 527.77 537.25">
+  <defs>
+    <style>
+      .cls-1-light-white {
+        fill: #7b00f4;
+      }
+
+      .cls-2-light-white {
+        opacity: 0.7;
+        isolation: isolate;
+        fill: url(#linear-gradient-lightwhite);
+      }
+
+      .cls-3-light-white {
+        opacity: 0.5;
+      }
+    </style>
+    <linearGradient id="linear-gradient-lightwhite" x1="-1824.4" y1="2065.16" x2="-1825.4" y2="2064.27"
+      gradientTransform="matrix(334, 0, 0, -251, 609827.95, 518460.4)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b957ff" />
+      <stop offset="1" stop-color="#8c00f7" />
+    </linearGradient>
+  </defs>
+  <g id="Layer_2" data-name="Layer 2">
+    <g id="Layer_1-2" data-name="Layer 1">
+      <path id="Path_25" data-name="Path 25" class="cls-1-light-white" d="M101.13,537.25H314.45l213.32-316H325.51Z" />
+      <path id="Path_24" data-name="Path 24" class="cls-2-light-white"
+        d="M263.89,0H477.21L327.09,221.22H527.77L409.26,396.62H0Z" />
+      <path id="Path_26" data-name="Path 26" class="cls-3-light-white" d="M161.17,453.51l224.39-56.89H200.68Z" />
+    </g>
+  </g>
+</svg>

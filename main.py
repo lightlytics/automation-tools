@@ -2,9 +2,12 @@ import os
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from typing import Dict, Any
 from src.python.common.logger import Logger
 from starlette.background import BackgroundTasks
+from starlette.requests import Request
 app = FastAPI()
 log = Logger().get_logger()
 
@@ -12,6 +15,15 @@ from src.python.utilities import generate_cost_report as cost_report
 from src.python.utilities import generate_cost_recommendations as cost_recommendations
 from src.python.utilities import generate_compliance_report as compliance_report
 from src.python.utilities import export_inventory as export_inventory
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+
+@app.get("/")
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.post("/generate_cost_report")

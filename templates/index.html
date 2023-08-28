@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lightlytics External Tools</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+</head>
+<body>
+    <div class="container-fluid p-0">
+        <div class="jumbotron jumbotron-fluid bg-dark text-white mb-0" style="height:70px;">
+            <div class="container d-flex align-items-center"> <!-- Use flex container to align elements -->
+                <img src="/static/logo.svg" alt="Lightlytics Icon" width="200" height="50" style="margin-top: 10px;">
+            </div>
+        </div>
+        <div class="container mt-5">
+            <form id="apiForm" method="POST">
+                <div class="mb-3">
+                    <label for="apiEndpoint" class="form-label"><strong>Select API</strong></label>
+                    <select class="form-select" id="apiEndpoint" name="apiEndpoint">
+                        <option value="/generate_cost_report">Generate Cost Report</option>
+                        <option value="/generate_cost_recommendations">Generate Cost Recommendations</option>
+                        <option value="/generate_compliance_report">Generate Compliance Report</option>
+                        <option value="/generate_export_inventory">Export Inventory</option>
+                    </select>
+                </div>
+                <div id="parameterFields" class="col-md-9 mb-3">
+                    <!-- Input boxes for API parameters will be added dynamically here -->
+                </div>
+                <button type="submit" class="btn btn-dark" id="submitButton">Submit</button>
+            </form>
+            <div class="mt-4" >
+                <pre id="responseOutput" class="col-md-9 alert alert-danger d-none"></pre>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="d-none justify-content-center align-items-center">
+        <div id="lottieContainer" style="width: 100px; height: 100px;"></div>
+    </div>
+
+    <script src="/static/script.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.7.4/lottie.min.js"></script>
+
+</body>
+</html>
