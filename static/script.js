@@ -52,6 +52,8 @@ document.addEventListener("DOMContentLoaded", function () {
     function populateParameterLabels(selectedParameters) {
         parameterFields.innerHTML = ""; // Clear existing parameter fields
 
+        document.getElementById("responseOutput").classList.add("d-none")
+
         selectedParameters.forEach(parameter => {
             const inputGroup = document.createElement("div");
             inputGroup.classList.add("mb-3");
