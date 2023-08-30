@@ -1,8 +1,8 @@
 import argparse
-import concurrent.futures
 import csv
 import os
 import sys
+from datetime import datetime
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -13,24 +13,20 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ws_name, stage=None):
+def main(environment, ll_username, ll_password, ws_name, request_date, stage=None):
     # Connecting to Lightlytics
     graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
-    log.info("Getting all cost rules")
-    cost_rules = graph_client.get_cost_rules()
-    log.info(f"Found {len(cost_rules)} cost rules!")
+    if not verify_date_format(request_date):
+        raise ValueError("Incorrect date format. Please use YYYY/MM/DD.")
 
-    log.info(f"Processing cost rules violations")
     recommendations = {}
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(get_recommendations, rule_id, graph_client, recommendations) for rule_id in
-                   [r["id"] for r in cost_rules]]
-        for future in futures:
-            future.result()
-    log.info(f"Finished processing cost rules violations successfully!")
+    try:
+        recommendations = graph_client.get_recommendations_history_by_date(request_date)
+    except Exception as e:
+        log.error(f"Recommendations wasn't found for date, error -> {e}")
 
-    csv_file = f'{environment.upper()} cost recommendations.csv'
+    csv_file = f"{environment.upper()} cost recommendations history.csv"
 
     fieldnames = [
         'resource_id',
@@ -66,6 +62,14 @@ def get_recommendations(rule_id, graph_client, recommendations):
         recommendations[rule_id]["violations"] = res["violations"]
 
 
+def verify_date_format(date_str):
+    try:
+        datetime.strptime(date_str, '%Y/%m/%d')
+        return True
+    except ValueError:
+        return False
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='This script will integrate Lightlytics environment with every account in the organization.')
@@ -78,7 +82,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
+        "--request_date", help="The date of the cost recommendation requested (YYYY/MM/DD)", required=True)
+    parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.stage)
+         args.ws_name, args.request_date, args.stage)
