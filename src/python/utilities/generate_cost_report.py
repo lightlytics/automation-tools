@@ -16,10 +16,11 @@ except ModuleNotFoundError:
 
 def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
     for date_to_check in [start_timestamp, end_timestamp]:
-        if verify_date_format(date_to_check):
-            print("Date is in the correct format.")
-        else:
+        if not verify_date_format(date_to_check):
             raise ValueError(f"The date: {date_to_check} is not in the correct format: YYYY-MM-DD")
+
+    if datetime.strptime(start_timestamp, "%Y-%m-%d") > datetime.strptime(end_timestamp, "%Y-%m-%d"):
+        raise ValueError("Start Date is not prior to End Date")
 
     # Setting up variables
     start_ts = start_timestamp + "T00:00:00.000Z"
