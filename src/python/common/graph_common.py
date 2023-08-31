@@ -441,6 +441,14 @@ class GraphCommon(object):
         query = "query ($date: String){costViolationsHistory(date:$date)}"
         return self.graph_query(None, {"date": req_date}, query)['data']['costViolationsHistory']['data']
 
+    def get_all_recommendations_history_dates(self):
+        """
+        Get recommendations history by date.
+        :returns (list) - Recommendations history available dates.
+        """
+        res = self.graph_query(None, {}, "query {costViolationsHistoryDates}")['data']['costViolationsHistoryDates']
+        return [d["date"] for d in res]
+
     # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
