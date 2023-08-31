@@ -24,7 +24,9 @@ def main(environment, ll_username, ll_password, ws_name, request_date, stage=Non
     try:
         recommendations = graph_client.get_recommendations_history_by_date(request_date)
     except Exception as e:
-        log.error(f"Recommendations wasn't found for date, error -> {e}")
+        err_msg = f"Recommendations wasn't found for date, error -> {e}"
+        log.error(err_msg)
+        raise Exception(err_msg)
 
     csv_file = f"{environment.upper()} cost recommendations history.csv"
 
