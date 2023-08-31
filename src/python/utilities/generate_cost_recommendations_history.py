@@ -1,6 +1,7 @@
 import argparse
 import csv
 import os
+import pandas as pd
 import sys
 from datetime import datetime
 
@@ -17,13 +18,29 @@ def main(environment, ll_username, ll_password, ws_name, request_date, stage=Non
     # Connecting to Lightlytics
     graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
 
+    # Verify if the request_date is in the correct format
     if not verify_date_format(request_date):
         raise ValueError("Incorrect date format. Please use YYYY/MM/DD.")
 
-    try:
+    # Get all available dates to query history from
+    available_dates = graph_client.get_all_recommendations_history_dates()
+
+    # Log the available dates for the WS
+    first_date, last_date, missing_dates = get_date_range(available_dates)
+    date_range = f"{first_date.strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}"
+    log.info(f"Available dates - {date_range}")
+    if len(missing_dates) > 0:
+        log.warning(f"Missing dates: {missing_dates}")
+
+    # Verify if date is in range and not missing
+    valid = verify_date_in_range(request_date, (first_date, last_date), missing_dates)
+
+    if valid:
         recommendations = graph_client.get_recommendations_history_by_date(request_date)
-    except Exception as e:
-        err_msg = f"Recommendations wasn't found for date, error -> {e}"
+    else:
+        err_msg = f"Recommendations wasn't found for date: {request_date}, " \
+                  f"available dates range - {date_range}, " \
+                  f"missing dates - {missing_dates}"
         log.error(err_msg)
         raise Exception(err_msg)
 
@@ -68,6 +85,34 @@ def verify_date_format(date_str):
         datetime.strptime(date_str, '%Y/%m/%d')
         return True
     except ValueError:
+        return False
+
+
+def get_date_range(dates):
+    # Convert the list of dates to datetime objects
+    datetime_dates = [datetime.strptime(date, '%Y/%m/%d') for date in dates]
+
+    # Get the first and last dates in the list
+    first_date = min(datetime_dates)
+    last_date = max(datetime_dates)
+
+    # Check for missing dates
+    missing_dates = []
+    date_range = pd.date_range(first_date, last_date)
+    for i in date_range:
+        if i not in datetime_dates:
+            missing_dates.append(i.strftime('%Y-%m-%d'))
+
+    # Print the range of dates and missing dates
+    return first_date, last_date, missing_dates
+
+
+def verify_date_in_range(date, date_range, missing_dates):
+    datetime_date = datetime.strptime(date, '%Y/%m/%d')
+
+    if date_range[0] <= datetime_date <= date_range[1] and datetime_date.strftime('%Y-%m-%d') not in missing_dates:
+        return True
+    else:
         return False
 
 
