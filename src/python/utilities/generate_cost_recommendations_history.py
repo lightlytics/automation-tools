@@ -20,7 +20,6 @@ def main(environment, ll_username, ll_password, ws_name, request_date, stage=Non
     if not verify_date_format(request_date):
         raise ValueError("Incorrect date format. Please use YYYY/MM/DD.")
 
-    recommendations = {}
     try:
         recommendations = graph_client.get_recommendations_history_by_date(request_date)
     except Exception as e:
