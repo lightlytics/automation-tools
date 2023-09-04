@@ -15,6 +15,7 @@ from src.python.utilities import generate_cost_report as cost_report
 from src.python.utilities import generate_cost_recommendations as cost_recommendations
 from src.python.utilities import generate_compliance_report as compliance_report
 from src.python.utilities import export_inventory as export_inventory
+from src.python.utilities import generate_cost_report_main_pipeline as cost_report_main_pipeline
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -34,6 +35,25 @@ def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTa
                  payload.get('stage', None)]
     try:
         file_name = cost_report.main(*arguments)
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="{file_name}"'
+        }
+        background_tasks.add_task(remove_file, file_name)
+        with open(file_name) as csv_file:
+            return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate_cost_report_main_pipeline")
+def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Generate Cost Report Main Pipeline requested - {payload['environment_sub_domain']}")
+    arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
+                 payload['ws_name'], payload['start_timestamp'], payload['end_timestamp'], payload['period'],
+                 payload.get('stage', None)]
+    try:
+        file_name = cost_report_main_pipeline.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'

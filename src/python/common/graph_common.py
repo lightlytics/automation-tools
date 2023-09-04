@@ -421,6 +421,39 @@ class GraphCommon(object):
             variables["period"] = group_by
         return self.graph_query(operation, variables, query)["data"]["cost_reports"]["results"]
 
+    def get_cost_chart_main_pipeline(self, from_timestamp, to_timestamp, group_by=None):
+        """
+        Get the cost information.
+        :returns (list) - Cost data.
+        """
+        operation = "CostChartIndexQuery"
+        query = "query CostChartIndexQuery($skip: Int, $limit: Int, $filters: CostFilters, $anti_filters: " \
+                "CostAntiFilters, $sort: CostSort, $groupBy: [CostGroupBy], $groupByTagKey: String, " \
+                "$trend_period: CostTrendPeriod, $trend_range: TrendRange){cost(filters: $filters anti_filters: " \
+                "$anti_filters group_bys: $groupBy trend_period: $trend_period trend_range: $trend_range sort: $sort " \
+                "skip: $skip limit: $limit group_by_tag_key: $groupByTagKey){total_count results{is_real_resource_id " \
+                "timestamp total_cost total_direct_cost total_indirect_cost preceding_total_cost " \
+                "preceding_total_direct_cost predicted_cost trend_difference trend_percentage " \
+                "trend_difference_direct trend_percentage_direct trend_difference_indirect trend_percentage_indirect " \
+                f"resource_type account region {group_by} " \
+                "__typename}__typename}}"
+        variables = {
+            "filters": {
+                "from_timestamp": from_timestamp,
+                "to_timestamp": to_timestamp
+            },
+            "sort": {
+                "field": "total_direct_cost",
+                "direction": "desc"
+            },
+            "groupBy": [
+                "resource_type", "region", "account", group_by
+            ],
+            "skip": 0,
+            "limit": 99999
+        }
+        return self.graph_query(operation, variables, query)['data']['cost']['results']
+
     def get_cost_rules(self):
         """
         Get Cost-related rules.

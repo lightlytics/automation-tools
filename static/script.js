@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Unique parameters for each endpoint
     const apiParameters = {
-        "/generate_cost_report": [
+        "/generate_cost_report_main_pipeline": [
             ...defaultParameters,
             { name: "start_timestamp", type: "date", required: true },
             { name: "end_timestamp", type: "date", required: true },
