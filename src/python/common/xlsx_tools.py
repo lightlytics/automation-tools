@@ -243,7 +243,7 @@ class XlsxFile(object):
             ll_url = report_details['ll_url']
             ws_id = report_details['ws_id']
             sheet[f"D{i + 5}"].hyperlink = \
-                f"{ll_url}/w/{ws_id}/rules/{violated_rule['id']}" \
+                f"{ll_url.replace('/graphql', '')}/w/{ws_id}/rules/{violated_rule['id']}" \
                 f"?f%5Baccount_id%5D%5B0%5D={account['cloud_account_id']}"
             font = Font(underline="single", color="0000FF")
             sheet[f"D{i + 5}"].font = font

@@ -156,7 +156,7 @@ def process_violation(violation, graph_client, ll_url, ws_id):
     violation_account = graph_client.get_resource_account_id(violation)
     violation_details = {
         "id": violation,
-        "url": f"{ll_url}/w/{ws_id}/discovery?{encoded_query_url}",
+        "url": f"{ll_url.replace('/graphql', '')}/w/{ws_id}/discovery?{encoded_query_url}",
     }
     return violation_account, violation_details
 
