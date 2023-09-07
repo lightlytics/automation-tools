@@ -14,7 +14,8 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
+def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period,
+         ignore_discounts=False, stage=None):
     for date_to_check in [start_timestamp, end_timestamp]:
         if not verify_date_format(date_to_check):
             raise ValueError(f"The date: {date_to_check} is not in the correct format: YYYY-MM-DD")
@@ -44,6 +45,9 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
     log.info(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}")
     cost_chart = graph_client.get_cost_chart(start_ts, end_ts, group_by=period)
     log.info("Fetched cost information successfully!")
+
+    if ignore_discounts:
+        cost_chart = [row for row in cost_chart if row['total_cost'] > 0]
 
     csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
 
@@ -94,7 +98,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--period", help="day/month/year", required=True)
     parser.add_argument(
+        "--ignore_discounts", help="Ignore all negative pricing fields", action="store_true")
+    parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.ws_name, args.start_timestamp, args.end_timestamp, args.period, args.stage)
+         args.ws_name, args.start_timestamp, args.end_timestamp, args.period, args.ignore_discounts, args.stage)

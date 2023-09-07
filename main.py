@@ -32,7 +32,7 @@ def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTa
     log.info(f"### Generate Cost Report requested - {payload['environment_sub_domain']}")
     arguments = [payload['environment_sub_domain'], payload['environment_user_name'], payload['environment_password'],
                  payload['ws_name'], payload['start_timestamp'], payload['end_timestamp'], payload['period'],
-                 payload.get('stage', None)]
+                 payload.get('ignore_discounts', None), payload.get('stage', None)]
     try:
         file_name = cost_report.main(*arguments)
         headers = {
