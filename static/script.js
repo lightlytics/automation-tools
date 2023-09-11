@@ -19,12 +19,10 @@ document.addEventListener("DOMContentLoaded", function () {
             ...defaultParameters,
             { name: "start_timestamp", type: "date", required: true },
             { name: "end_timestamp", type: "date", required: true },
-            { name: "period", type: "text", placeholder: "day/month/year", required: true },
-            { name: "stage", type: "text", placeholder: "Leave Blank" }
+            { name: "period", type: "text", placeholder: "day/month/year", required: true }
         ],
         "/generate_cost_recommendations": [
-            ...defaultParameters,
-            { name: "stage", type: "text", placeholder: "Leave Blank" }
+            ...defaultParameters
         ],
         "/generate_compliance_report": [
             ...defaultParameters,
@@ -36,15 +34,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 required: true
             },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
-            { name: "label", type: "text", placeholder: "Not mandatory, Add a specific label" },
-            { name: "stage", type: "text", placeholder: "Leave Blank" }
+            { name: "label", type: "text", placeholder: "Not mandatory, Add a specific label" }
         ],
         "/generate_export_inventory": [
             ...defaultParameters,
             { name: "resource_type", type: "text", placeholder: "Resource Type, e.g: 'instance', 'security_group'", required: true },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
-            { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" },
-            { name: "stage", type: "text", placeholder: "Leave Blank" }
+            { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" }
         ]
     };
 
@@ -222,6 +218,5 @@ const parameterDisplayNames = {
     "tags": "Selected Tags",
     "compliance_standard": "Compliance Standard to use",
     "label": "Label to use",
-    "resource_type": "Resource Type",
-    "stage": "Stage"
+    "resource_type": "Resource Type"
 };
