@@ -1,3 +1,6 @@
+import { complianceStandards } from './complianceStandards.js';
+import { llResources } from './llResources.js';
+
 document.addEventListener("DOMContentLoaded", function () {
     const apiForm = document.getElementById("apiForm");
     const apiEndpointSelect = document.getElementById("apiEndpoint");
@@ -29,7 +32,7 @@ document.addEventListener("DOMContentLoaded", function () {
             {
                 name: "compliance_standard",
                 type: "select",
-                options: ['MAS', 'CIS 8', 'AWS Foundational Security Best Practices Controls', 'PCI DSS', 'CSA CCM', 'NIST4', 'SOC2', 'ISO 27701', 'FedRAMP', 'NIST 800-53', 'EKS CIS', 'FTR', 'NIST-CSF', 'AWS Well-Architected Framework', 'HITRUST', 'GDPR', 'CISAWSF', 'CCPA', 'ISO 27001', 'CIS', 'HIPAA', 'PCI', 'APRA'],
+                options: complianceStandards,
                 placeholder: "Choose Compliance Standard",
                 required: true
             },
@@ -38,7 +41,13 @@ document.addEventListener("DOMContentLoaded", function () {
         ],
         "/generate_export_inventory": [
             ...defaultParameters,
-            { name: "resource_type", type: "text", placeholder: "Resource Type, e.g: 'instance', 'security_group'", required: true },
+            {
+                name: "resource_type",
+                type: "select",
+                options: llResources,
+                placeholder: "Choose Resource Type",
+                required: true
+            },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" }
         ]
