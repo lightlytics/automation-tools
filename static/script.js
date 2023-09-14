@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
         { name: "environment_sub_domain", type: "text", placeholder: "Enter Sub Domain", required: true },
         { name: "environment_user_name", type: "text", placeholder: "Enter User Name", required: true },
         { name: "environment_password", type: "password", placeholder: "Enter Password", required: true },
+        { name: "environment_f2a_token", type: "password", placeholder: "Leave blank if F2A not set" },
         { name: "ws_name", type: "text", placeholder: "Enter WS Name", required: true }
     ];
 
@@ -219,6 +220,7 @@ const parameterDisplayNames = {
     "environment_sub_domain": "Environment Sub-Domain (<strong>xyz</strong>.lightlytics.com)",
     "environment_user_name": "Environment User Name (Email)",
     "environment_password": "Environment Password",
+    "environment_f2a_token": "Environment F2A Token",
     "ws_name": "Workspace Name",
     "start_timestamp": "Start Date",
     "end_timestamp": "End Date",

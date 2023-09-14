@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_timestamp, period, stage=None):
+def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_timestamp, end_timestamp, period, stage=None):
     for date_to_check in [start_timestamp, end_timestamp]:
         if not verify_date_format(date_to_check):
             raise ValueError(f"The date: {date_to_check} is not in the correct format: YYYY-MM-DD")
@@ -32,7 +32,7 @@ def main(environment, ll_username, ll_password, ws_name, start_timestamp, end_ti
         raise Exception(msg)
 
     # Connecting to Lightlytics
-    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
+    graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     log.info(f"Checking if cost is integrated in WS: {ws_name}")
     if not graph_client.check_cost_integration():
@@ -84,6 +84,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--environment_password", help="The Lightlytics environment password", required=True)
     parser.add_argument(
+        "--environment_f2a_token", help="F2A Token if set", default=None)
+    parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
         "--start_timestamp", help="Starting date for report in Zulu format (YYYY-MM-DD)", required=True)
@@ -94,5 +96,5 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.environment_f2a_token,
          args.ws_name, args.start_timestamp, args.end_timestamp, args.period, args.stage)

@@ -18,13 +18,13 @@ except ModuleNotFoundError:
     from src.python.common.xlsx_tools import XlsxFile
 
 
-def main(environment, ll_username, ll_password, ws_name, compliance, accounts=None, label=None, stage=None):
+def main(environment, ll_username, ll_password, ll_f2a, ws_name, compliance, accounts=None, label=None, stage=None):
     # Setting up variables
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
     # Connecting to Lightlytics
-    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
+    graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     log.info(f"Verifying that '{compliance}' compliance standard exist")
     compliance_list = graph_client.get_compliance_standards()
@@ -196,6 +196,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--environment_password", help="The Lightlytics environment password", required=True)
     parser.add_argument(
+        "--environment_f2a_token", help="F2A Token if set", default=None)
+    parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
         "--compliance", help="The report will be generated for this compliance (Case Sensitive)", required=True)
@@ -206,5 +208,5 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.environment_f2a_token,
          args.ws_name, args.compliance, args.accounts, args.label, args.stage)

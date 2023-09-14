@@ -5,17 +5,20 @@ import time
 
 
 class GraphCommon(object):
-    def __init__(self, url, email, pw, customer_id=None):
+    def __init__(self, url, email, pw, customer_id=None, otp=None):
         """ Initialize GraphCommon class to graph functions.
             :param url (str)            - The url of the environment.
             :param email (str)          - The email for login.
             :param pw (str)             - The password for login.
+            :param otp (str)            - 2FA token.
             :param customer_id (str)    - The customer ID for operations; Defaults to the Demo Customer ID.
         """
         self.url = url
         self.email = email
         self.pw = pw
         self.token = self.get_token(email, pw)
+        if otp:
+            self.token = self.get_token_otp(otp, self.token)
         time.sleep(2)
         self.customer_id = customer_id or self.get_customer_id()
 
@@ -37,6 +40,25 @@ class GraphCommon(object):
             eval_res = json.loads(res.text)
             self.token = 'Bearer ' + eval_res['data']['login']['access_token']
             return self.token
+        else:
+            err = res.text
+            raise Exception(json.loads(str(err))['errors'][0]['message'])
+
+    def get_token_otp(self, otp, token):
+        """ Get token using 2FA.
+            :param otp (str)    - The OTP code provided by the user.
+            :param token (str)  - Token received after successful login.
+            :returns (str)      - New Bearer Token.
+        """
+        payload_operation = "authenticateTwoFactor"
+        query = "mutation authenticateTwoFactor($method: TwoFactorState, $user_code: String){" \
+                "authenticateTwoFactor(method: $method, user_code: $user_code){access_token refresh_token __typename}}"
+        payload_vars = {"method": "SECURED_TOTP", "user_code": otp}
+        payload = self.create_graph_payload(payload_operation, payload_vars, query)
+        res = requests.post(self.url, json=payload, headers={"Authorization": token})
+        if 'errors' not in res.text:
+            eval_res = json.loads(res.text)
+            return 'Bearer ' + eval_res['data']['authenticateTwoFactor']['access_token']
         else:
             err = res.text
             raise Exception(json.loads(str(err))['errors'][0]['message'])

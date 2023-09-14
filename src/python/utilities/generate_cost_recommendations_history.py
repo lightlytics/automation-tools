@@ -14,9 +14,9 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ws_name, request_date, stage=None):
+def main(environment, ll_username, ll_password, ll_f2a, ws_name, request_date, stage=None):
     # Connecting to Lightlytics
-    graph_client = get_graph_client(environment, ll_username, ll_password, ws_name, stage)
+    graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     # Verify if the request_date is in the correct format
     if not verify_date_format(request_date):
@@ -126,11 +126,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--environment_password", help="The Lightlytics environment password", required=True)
     parser.add_argument(
+        "--environment_f2a_token", help="F2A Token if set", default=None)
+    parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
         "--request_date", help="The date of the cost recommendation requested (YYYY/MM/DD)", required=True)
     parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
+    main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.environment_f2a_token,
          args.ws_name, args.request_date, args.stage)
