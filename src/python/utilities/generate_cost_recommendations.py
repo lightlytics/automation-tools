@@ -24,8 +24,8 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     log.info(f"Processing cost rules violations")
     recommendations = {}
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(get_recommendations, rule_id, graph_client, recommendations) for rule_id in
-                   [r["id"] for r in cost_rules]]
+        futures = [executor.submit(get_recommendations, rule_id, graph_client, recommendations)
+                   for rule_id in cost_rules]
         for future in futures:
             future.result()
     log.info(f"Finished processing cost rules violations successfully!")
@@ -37,6 +37,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
         'account',
         'region',
         'name',
+        'cost_label',
         'predicted_monthly_cost_savings'
     ]
 
@@ -51,6 +52,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
                     'account': violation['account_id'],
                     'region': violation['region'],
                     'name': value['name'],
+                    'cost_label': value['cost_label'],
                     'predicted_monthly_cost_savings': violation.get('monthly_cost', 0) or 0
                 })
     log.info("File generated successfully, export complete!")
@@ -58,12 +60,17 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     return csv_file
 
 
-def get_recommendations(rule_id, graph_client, recommendations):
-    res = graph_client.export_csv_rule(rule_id)
+def get_recommendations(rule, graph_client, recommendations):
+    res = graph_client.export_csv_rule(rule['id'])
     if res:
         log.info(f"Found {res['violation_count']} violations in rule: {res['rule_name']}")
-        recommendations[rule_id] = {"name": res["rule_name"]}
-        recommendations[rule_id]["violations"] = res["violations"]
+        recommendations[rule['id']] = {"name": res["rule_name"]}
+        recommendations[rule['id']]["violations"] = res["violations"]
+        try:
+            recommendations[rule['id']]["cost_label"] = [label.replace("Cost Label: ", "") for label in rule["labels"]
+                                                         if label.startswith("Cost Label: ")][0]
+        except IndexError:
+            recommendations[rule['id']]["cost_label"] = ""
 
 
 if __name__ == "__main__":
