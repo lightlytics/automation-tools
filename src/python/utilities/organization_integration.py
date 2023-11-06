@@ -97,6 +97,8 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                 current_regions = sub_account_information["cloud_regions"]
                 potential_regions = get_active_regions(sub_account_session, regions)
                 if sorted(current_regions) != sorted(potential_regions):
+                    potential_regions.extend(current_regions)
+                    potential_regions = list(set(potential_regions))
                     print(color(
                         f"Account: {sub_account[0]} | Regions are different, updating to {potential_regions}", "blue"))
                     if not update_regions(graph_client, sub_account, potential_regions, not parallel):
