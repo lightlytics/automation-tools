@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel):
+def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel, ws_id=None):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
@@ -23,7 +23,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
 
     print(color("Trying to login into Lightlytics", "blue"))
     ll_url = f"https://{environment}.lightlytics.com/graphql"
-    graph_client = GraphCommon(ll_url, ll_username, ll_password)
+    graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
     print(color("Logged in successfully!", "green"))
 
     print(color("Creating Boto3 Session", "blue"))
@@ -202,6 +202,8 @@ if __name__ == "__main__":
         required=False)
     parser.add_argument(
         "--parallel", help="Number of threads for parallel integration", type=int, required=False)
+    parser.add_argument(
+        "--ws_id", help="ID of the WS to deploy to", required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.aws_profile_name, args.accounts, args.parallel)
+         args.aws_profile_name, args.accounts, args.parallel, args.ws_id)
