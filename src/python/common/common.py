@@ -19,7 +19,7 @@ if len(log.handlers) == 0:
 
 def get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage):
     log.info(f"Trying to login into Lightlytics in environment {environment}")
-    ll_url = f"https://{environment}.lightlytics.com"
+    ll_url = f"https://{environment}.streamsec.io"
     if stage:
         ll_url = f"https://{environment}.lightops.io"
     ll_graph_url = f"{ll_url}/graphql"
