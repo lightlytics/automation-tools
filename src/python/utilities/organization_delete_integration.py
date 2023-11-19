@@ -16,7 +16,7 @@ except ModuleNotFoundError:
 
 def main(environment, accounts):
     # Setting up variables
-    ll_url = f"https://{environment}.lightlytics.com/graphql"
+    ll_url = f"https://{environment}.streamsec.io/graphql"
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 

@@ -22,7 +22,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
         accounts = accounts.replace(" ", "").split(",")
 
     print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com/graphql"
+    ll_url = f"https://{environment}.streamsec.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
     print(color("Logged in successfully!", "green"))
 
