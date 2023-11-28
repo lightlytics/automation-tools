@@ -236,6 +236,25 @@ class GraphCommon(object):
         else:
             return resources
 
+    def get_resources_by_type(self, resource_type, get_only_ids=False):
+        """ Get resources details by type.
+            :param resource_type (str)      - Resource type.
+            :param get_only_ids (boolean)   - Return only IDs.
+            :returns (dict/list)            - resources details.
+        """
+        operation = "ResourceSearch"
+        query = "query ResourceSearch($includeTags: Boolean!, $phrase: String, $filters: SearchFilters, $skip: Int, " \
+                "$limit: Int){search(phrase: $phrase, filters: $filters, skip: $skip, limit: $limit){totalCount " \
+                "results{id type display_name addresses is_public state network_interfaces{id addresses __typename} " \
+                "tags @include(if: $includeTags){Key Value __typename}cloud_tags @include(if: $includeTags){Key " \
+                "Value __typename}__typename}__typename}}"
+        variables = {"includeTags": False, "phrase": "",
+                     "filters": {"resource_type": [resource_type], "attributes": []}, "skip": 0}
+        resources = self.graph_query(operation, variables, query)['data']['search']['results']
+        if get_only_ids:
+            return [r['id'] for r in resources]
+        return resources
+
     def get_resources_type_count_by_account(self, resource_type, account):
         """ Get resources count by account.
             :param account (str)        - Account ID.
