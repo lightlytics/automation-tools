@@ -68,62 +68,10 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, compliance, acc
     }
 
     log.info(f"Getting violations for each rule")
-    for rule in compliance_rules:
-        rule["violations"] = graph_client.get_rule_violations(rule["id"])
-        violations_count = len(rule["violations"])
-        rule["metadata"] = graph_client.get_rule_metadata(rule["id"])
-        report_details["total_violations"] += violations_count
-        if violations_count > 0:
-            log.info(f"Generating report for rule '{rule['name']}'")
-            log.info(f"Adding report for {violations_count} violations")
-
-            # Create a ThreadPoolExecutor
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                # Create a list to store the futures of each worker
-                futures = []
-                # Iterate over the violations
-                for violation in rule["violations"]:
-                    # Submit each violation to the executor and store the future object
-                    future = executor.submit(
-                        process_violation, violation, graph_client, graph_client.url, graph_client.customer_id)
-                    futures.append(future)
-                # Create a dictionary to store the results
-                rule_details = {
-                    "name": rule["name"],
-                    "id": rule["id"],
-                    "violated_resources": {}
-                }
-                # Iterate over the completed futures and process the results
-                for future in concurrent.futures.as_completed(futures):
-                    violation_account, violation_details = future.result()
-                    try:
-                        rule_details["violated_resources"][violation_account]["resource_ids"].append(violation_details)
-                    except KeyError:
-                        try:
-                            if rule["metadata"]["resource_predicate"]:
-                                resource_type = rule["metadata"]["resource_predicate"]["resource_type"]
-                                rule_details["resource_type"] = resource_type
-                            else:
-                                resource_type = rule["metadata"]["path_source_predicate"]["resource_type"]
-                                rule_details["resource_type"] = resource_type
-                            rule_details["violated_resources"][violation_account] = {
-                                "resource_ids": [violation_details],
-                                "total_resources": graph_client.get_resources_type_count_by_account(
-                                    resource_type, violation_account)
-                            }
-                        except IndexError:
-                            resource_type = rule["metadata"]["path_destination_predicate"]["resource_type"] or \
-                                            rule["metadata"]["path_intermediate_predicate"]["resource_type"]
-                            rule_details["resource_type"] = resource_type
-                            rule_details["violated_resources"][violation_account] = {
-                                "resource_ids": [violation_details],
-                                "total_resources": graph_client.get_resources_type_count_by_account(
-                                    resource_type, violation_account)
-                            }
-
-            report_details["violated_rules"].append(rule_details)
-            report_details["total_rules_violated"] += 1
-            log.info(f"Finished generating report for rule '{rule['name']}'!")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_rule, rule, graph_client, report_details) for rule in compliance_rules]
+        # Wait for all threads to complete
+        concurrent.futures.wait(futures)
 
     log.info("Getting accounts list from the workspace")
     ws_accounts = graph_client.get_accounts()
@@ -151,14 +99,62 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, compliance, acc
     return xlsx_file_name
 
 
-def process_violation(violation, graph_client, ll_url, ws_id):
-    encoded_query_url = quote_plus("i[resourceId]") + "=" + quote_plus(violation)
-    violation_account = graph_client.get_resource_account_id(violation)
-    violation_details = {
-        "id": violation,
-        "url": f"{ll_url.replace('/graphql', '')}/w/{ws_id}/discovery?{encoded_query_url}",
+def process_rule(rule, graph_client, report_details):
+    rule_data = graph_client.export_csv_rule(rule["id"])
+    violations_count = len(rule_data['violations'])
+    rule["metadata"] = graph_client.get_rule_metadata(rule["id"])
+    report_details["total_violations"] += violations_count
+    if violations_count > 0:
+        add_violation_to_report(rule, rule_data, violations_count, graph_client, report_details)
+
+
+def add_violation_to_report(rule, rule_data, violations_count, graph_client, report_details):
+    log.info(f"Generating report for rule '{rule['name']}'")
+    log.info(f"Adding report for {violations_count} violations")
+    rule_details = {
+        "name": rule["name"],
+        "id": rule["id"],
+        "violated_resources": {}
     }
-    return violation_account, violation_details
+    for violation in rule_data['violations']:
+        encoded_query_url = quote_plus("i[resourceId]") + "=" + quote_plus(violation["resource_id"])
+        violation_account = violation["account_id"].split('"')[1]
+        violation_details = {
+            "id": violation["resource_id"],
+            "url": f"{graph_client.url.replace('/graphql', '')}/w/"
+                   f"{graph_client.customer_id}/discovery?{encoded_query_url}",
+        }
+        add_violation_details(rule, rule_details, violation_account, violation_details, graph_client)
+    report_details["violated_rules"].append(rule_details)
+    report_details["total_rules_violated"] += 1
+    log.info(f"Finished generating report for rule '{rule['name']}'!")
+
+
+def add_violation_details(rule, rule_details, violation_account, violation_details, graph_client):
+    try:
+        rule_details["violated_resources"][violation_account]["resource_ids"].append(violation_details)
+    except KeyError:
+        try:
+            if rule["metadata"]["resource_predicate"]:
+                resource_type = rule["metadata"]["resource_predicate"]["resource_type"]
+                rule_details["resource_type"] = resource_type
+            else:
+                resource_type = rule["metadata"]["path_source_predicate"]["resource_type"]
+                rule_details["resource_type"] = resource_type
+            rule_details["violated_resources"][violation_account] = {
+                "resource_ids": [violation_details],
+                "total_resources": graph_client.get_resources_type_count_by_account(
+                    resource_type, violation_account)
+            }
+        except IndexError:
+            resource_type = rule["metadata"]["path_destination_predicate"]["resource_type"] or \
+                            rule["metadata"]["path_intermediate_predicate"]["resource_type"]
+            rule_details["resource_type"] = resource_type
+            rule_details["violated_resources"][violation_account] = {
+                "resource_ids": [violation_details],
+                "total_resources": graph_client.get_resources_type_count_by_account(
+                    resource_type, violation_account)
+            }
 
 
 def enrich_accounts(report_details, ws_accounts, graph_client):

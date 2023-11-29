@@ -170,9 +170,12 @@ class XlsxFile(object):
 
             # Rule passed/failed
             sheet.merge_cells(f"D{i + 5}:E{i + 5}")
-            if len(rule['violations']) > 0:
+            if rule['id'] in [r['id'] for r in report_details['violated_rules']]:
+                rule_violations = [r for r in report_details['violated_rules']
+                                   if r['id'] == rule['id']][0]['violated_resources']
+                rule_violations_count = sum([r['total_resources'] for r in rule_violations.values()])
                 font = Font(color="FF0000")
-                sheet[f"D{i + 5}"] = f"Failed ({len(rule['violations'])} violations)"
+                sheet[f"D{i + 5}"] = f"Failed ({rule_violations_count} violations)"
                 sheet[f"D{i + 5}"].font = font
                 sheet[f"D{i + 5}"].border = self.default_border
             else:
