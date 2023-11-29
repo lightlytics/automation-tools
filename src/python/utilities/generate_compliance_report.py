@@ -109,8 +109,8 @@ def process_rule(rule, graph_client, report_details):
 
 
 def add_violation_to_report(rule, rule_data, violations_count, graph_client, report_details):
-    log.info(f"Generating report for rule '{rule['name']}'")
-    log.info(f"Adding report for {violations_count} violations")
+    log.info(f"{rule['name']} | Generating report")
+    log.info(f"{rule['name']} | Adding report for {violations_count} violations")
     rule_details = {
         "name": rule["name"],
         "id": rule["id"],
@@ -127,7 +127,7 @@ def add_violation_to_report(rule, rule_data, violations_count, graph_client, rep
         add_violation_details(rule, rule_details, violation_account, violation_details, graph_client)
     report_details["violated_rules"].append(rule_details)
     report_details["total_rules_violated"] += 1
-    log.info(f"Finished generating report for rule '{rule['name']}'!")
+    log.info(f"{rule['name']} | Finished generating report!")
 
 
 def add_violation_details(rule, rule_details, violation_account, violation_details, graph_client):
