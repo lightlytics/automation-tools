@@ -21,7 +21,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
-    print(color("Trying to login into Lightlytics", "blue"))
+    print(color("Trying to login into Stream Security", "blue"))
     ll_url = f"https://{environment}.streamsec.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
     print(color("Logged in successfully!", "green"))
@@ -123,15 +123,15 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                 return
             else:
                 err_msg = f"Account: {sub_account[0]} | Account is in {sub_account_information['status']} " \
-                          f"status at Lightlytics, remove it and try again"
+                          f"status at StreamSecurity, remove it and try again"
                 print(color(err_msg, "red"))
                 raise Exception(err_msg)
         except IndexError:
             pass
 
-        # If account is not already integrated to Lightlytics
+        # If account is not already integrated to StreamSecurity
         if not ll_integrated:
-            print(color(f"Account: {sub_account[0]} | Creating account in Lightlytics", "blue"))
+            print(color(f"Account: {sub_account[0]} | Creating account in StreamSecurity", "blue"))
             graph_client.create_account(
                 sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
             print(color(f"Account: {sub_account[0]} | Account created successfully", "green"))
@@ -151,7 +151,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
         active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
-        # Updating the regions in Lightlytics and waiting
+        # Updating the regions in StreamSecurity and waiting
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
             print(color(err_msg, "red"))
@@ -170,7 +170,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
 
 def update_regions(graph_client, sub_account, active_regions, wait=True):
-    print(color(f"Account: {sub_account[0]} | Updating regions in Lightlytics according to active regions", "blue"))
+    print(color(f"Account: {sub_account[0]} | Updating regions in StreamSecurity according to active regions", "blue"))
     graph_client.edit_regions(sub_account[0], active_regions)
     print(color(f"Account: {sub_account[0]} | Updated regions to {active_regions}", "green"))
 
@@ -187,13 +187,13 @@ def update_regions(graph_client, sub_account, active_regions, wait=True):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Lightlytics environment with every account in the organization.')
+        description='This script will integrate StreamSecurity environment with every account in the organization.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain")
+        "--environment_sub_domain", help="The StreamSecurity environment sub domain")
     parser.add_argument(
-        "--environment_user_name", help="The Lightlytics environment user name")
+        "--environment_user_name", help="The StreamSecurity environment user name")
     parser.add_argument(
-        "--environment_password", help="The Lightlytics environment password")
+        "--environment_password", help="The StreamSecurity environment password")
     parser.add_argument(
         "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
         default="staging")
