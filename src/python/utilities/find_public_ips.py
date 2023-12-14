@@ -36,9 +36,11 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     external_ip_addresses = [ip for ip in list(set(ip_addresses)) if is_external_ip(ip)]
     ext_dict = {}
     for ext_ip in external_ip_addresses:
-        ext_dict[ext_ip] = graph_client.general_resource_search(ext_ip, get_only_ids=True)
+        ext_dict[ext_ip] = [ip for ip in graph_client.general_resource_search(ext_ip, get_only_ids=True)
+                            if ip != ext_ip]
+        if len(ext_dict[ext_ip]) == 0:
+            ext_dict[ext_ip] = 'Elastic IP'
 
-    pprint(external_ip_addresses)
     pprint(ext_dict)
 
 
