@@ -11,3 +11,4 @@ starlette~=0.27.0
 Pillow~=9.5.0
 Jinja2~=3.1.2
 pandas~=2.1.0
+kubernetes~=29.0.0

@@ -549,11 +549,30 @@ class GraphCommon(object):
         Get Kubernetes integrations.
         :returns (list) - K8s integration list.
         """
+        operation = "Kubernetes"
         query = "query Kubernetes{kubernetes{_id type display_name creation_date status collection_token __typename}}"
-        res = self.graph_query("Kubernetes", {}, query)['data']['kubernetes']
+        res = self.graph_query(operation, {}, query)['data']['kubernetes']
         if get_only_names:
             return [ki['display_name'] for ki in res]
         return res
+
+    def create_kubernetes_integration(self, eks_arn, display_name):
+        """
+        Create Kubernetes integration.
+        :returns (list) - K8s integration list.
+        """
+        operation = "CreateKubernetes"
+        query = "mutation CreateKubernetes($kubernetes: CreateKubernetesInput){createKubernetes(kubernetes: " \
+                "$kubernetes){_id collection_token __typename}}"
+        variables = {"kubernetes": {"display_name": display_name, "eks_arn": eks_arn}}
+        print(display_name)
+        print(eks_arn)
+        res = self.graph_query(operation, variables, query)
+        if "errors" in res:
+            print(f"Failed to create integration - {res['errors'][0]['message']}")
+            return False
+        else:
+            return res['data']['createKubernetes']
 
     # General methods
     @staticmethod
