@@ -544,6 +544,17 @@ class GraphCommon(object):
         res = self.graph_query(None, {}, "query {costViolationsHistoryDates}")['data']['costViolationsHistoryDates']
         return [d["date"] for d in res]
 
+    def get_kubernetes_integrations(self, get_only_names=False):
+        """
+        Get Kubernetes integrations.
+        :returns (list) - K8s integration list.
+        """
+        query = "query Kubernetes{kubernetes{_id type display_name creation_date status collection_token __typename}}"
+        res = self.graph_query("Kubernetes", {}, query)['data']['kubernetes']
+        if get_only_names:
+            return [ki['display_name'] for ki in res]
+        return res
+
     # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
