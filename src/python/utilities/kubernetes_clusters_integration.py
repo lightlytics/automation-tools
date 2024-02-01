@@ -61,14 +61,14 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             print(color(f"{cluster_name} | Integration created successfully in Stream Security!", "green"))
             integration_token = integration_metadata['collection_token']
             print(color(f"{cluster_name} | Switching Kubernetes context", "blue"))
-            kubernetes.config.load_kube_config(context=cluster['id'])
+            subprocess.check_call(["kubectl", "config", "use-context", cluster['id']])
             stream_url = f"{environment}.lightops.io" if stage else f"{environment}.streamsec.io"
             helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
 
             print(color(f"{cluster_name} | Executing helm commands", "blue"))
-            subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '))
-            subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '))
-            subprocess.check_call(helm_cmd.split(' '))
+            subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '), stderr=subprocess.DEVNULL)
+            subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '), stderr=subprocess.DEVNULL)
+            subprocess.check_call(helm_cmd.split(' '), stderr=subprocess.DEVNULL)
 
     print(color("Script finished", "green"))
 

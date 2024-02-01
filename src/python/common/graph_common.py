@@ -565,8 +565,6 @@ class GraphCommon(object):
         query = "mutation CreateKubernetes($kubernetes: CreateKubernetesInput){createKubernetes(kubernetes: " \
                 "$kubernetes){_id collection_token __typename}}"
         variables = {"kubernetes": {"display_name": display_name, "eks_arn": eks_arn}}
-        print(display_name)
-        print(eks_arn)
         res = self.graph_query(operation, variables, query)
         if "errors" in res:
             print(f"Failed to create integration - {res['errors'][0]['message']}")
