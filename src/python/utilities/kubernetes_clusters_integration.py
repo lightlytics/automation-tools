@@ -33,7 +33,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
                 print(color(f"{cluster_name} | Cluster is already integrated!", "green"))
                 continue
             else:
-                print(color(f"{cluster_name} | Cluster has wrong status - "
+                print(color(f"{cluster_name} | Cluster has wrong status ({relevant_integration['status']}) - "
                             f"please remove it manually and run the script again", "red"))
                 continue
         except IndexError:
