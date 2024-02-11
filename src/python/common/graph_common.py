@@ -572,6 +572,49 @@ class GraphCommon(object):
         else:
             return res['data']['createKubernetes']
 
+    # CVEs
+    def get_cves(self, public_exposed=False, exploit_available=False, fix_available=False, cve_id=None, source=None,
+                 packages=None, resource_id=None, resource_type=None, severity=None):
+        """ Get CVEs.
+            :returns (list) - CVEs information.
+        """
+        operation = 'CVEsMainQuery'
+        variables = {
+            'filters': {
+                "public_exposed": public_exposed,
+                "exploit_available": exploit_available,
+                "fix_available": fix_available
+            },
+            'sort_by': 'cvss_score',
+            'sort_order': -1
+        }
+        query = "query CVEsMainQuery($filters: CVEFilters, $skip: Int, $limit: Int, $sort_by: CVESortField, " \
+                "$sort_order: Int) {cves(filters: $filters skip: $skip limit: $limit sort_by: $sort_by sort_order: " \
+                "$sort_order) {total_count results {cve_id cve_sources severity cvss_score packages exploit_available" \
+                " public_exposed affected_resources_count fix_available fixed_in_version __typename} __typename} }"
+        if cve_id:
+            variables['filters']['cve_id'] = cve_id
+        if source:
+            variables['filters']['source'] = source
+        if packages:
+            variables['filters']['packages'] = packages
+        if resource_id:
+            variables['filters']['resource_id'] = resource_id
+        if resource_type:
+            variables['filters']['resource_type'] = resource_type
+        if severity:
+            variables['filters']['severity'] = severity
+        return self.graph_query(operation, variables, query)['data']['cves']['results']
+
+    def get_affected_resources(self, cve_id):
+        operation = 'CVEResourcesQuery'
+        variables = {"filters": {"cve_ids": [f"{cve_id}"]}}
+        query = ("query CVEResourcesQuery($filters: VulnerableResourcesFilters, $skip: Int, $limit: Int){ "
+                 "cve_resources(filters: $filters, skip: $skip, limit: $limit){total_count results{ "
+                 "account_id resource_id resource_type public_exposed __typename} "
+                 "__typename}}")
+        return self.graph_query(operation, variables, query)['data']['cve_resources']['results']
+
     # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
