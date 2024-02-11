@@ -323,6 +323,16 @@ class GraphCommon(object):
                 "end_timestamp region parent account_id __typename}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']
 
+    def get_resource_ancestors(self, resource_id):
+        """ Get resource ancestors.
+            :param resource_id (str)    - Specific resource's ID.
+            :returns (dict)             - Ancestors information.
+        """
+        operation = 'ResourceAncestors'
+        query = "query ResourceAncestors($resourceId: ID!){resourceAncestors(resource_id: $resourceId){id type " \
+                "display_name parent __typename}}"
+        return self.graph_query(operation, {"resourceId": resource_id}, query)['data']['resourceAncestors']
+
     def get_resource_account_id(self, resource_id):
         """ Get resource account ID.
             :param resource_id (str)    - Specific resource's ID.
