@@ -56,7 +56,8 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             print(color(f"{cluster_name} | Integration not found, creating it", "blue"))
             integration_metadata = graph_client.create_kubernetes_integration(cluster['id'], cluster_name)
             if not integration_metadata:
-                print(color(f"{cluster_name} | Couldn't create the integration in Stream Security env - skipping"))
+                print(color(f"{cluster_name} | Couldn't create the integration in Stream Security env - "
+                            f"please contact support", "red"))
                 continue
             print(color(f"{cluster_name} | Integration created successfully in Stream Security!", "green"))
             integration_token = integration_metadata['collection_token']
@@ -66,9 +67,12 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
 
             print(color(f"{cluster_name} | Executing helm commands", "blue"))
-            subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '))
-            subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '))
-            subprocess.check_call(helm_cmd.split(' '))
+            try:
+                subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '))
+                subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '))
+                subprocess.check_call(helm_cmd.split(' '))
+            except Exception as e:
+                print(color(f"{cluster_name} | Something went wrong when running 'helm' commands, error: {e}", "red"))
 
     print(color("Script finished", "green"))
 
