@@ -66,9 +66,9 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
 
             print(color(f"{cluster_name} | Executing helm commands", "blue"))
-            subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '), stderr=subprocess.DEVNULL)
-            subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '), stderr=subprocess.DEVNULL)
-            subprocess.check_call(helm_cmd.split(' '), stderr=subprocess.DEVNULL)
+            subprocess.check_call(INTEGRATION_COMMANDS[0].split(' '))
+            subprocess.check_call(INTEGRATION_COMMANDS[1].split(' '))
+            subprocess.check_call(helm_cmd.split(' '))
 
     print(color("Script finished", "green"))
 
