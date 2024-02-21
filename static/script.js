@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", function () {
             {
                 name: "resource_type",
                 type: "select",
-                options: llResources,
+                options: llResources.map(({ value, displayName }) => ({ value, label: displayName })),
                 placeholder: "Choose Resource Type",
                 required: true
             },
@@ -57,8 +57,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Function to populate parameter labels and input fields
     function populateParameterLabels(selectedParameters) {
         parameterFields.innerHTML = ""; // Clear existing parameter fields
-
-        document.getElementById("responseOutput").classList.add("d-none")
+        document.getElementById("responseOutput").classList.add("d-none");
 
         selectedParameters.forEach(parameter => {
             const inputGroup = document.createElement("div");
@@ -76,11 +75,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 defaultOption.textContent = parameter.placeholder;
                 selectElement.appendChild(defaultOption);
 
-                parameter.options.forEach(optionValue => {
-                    const option = document.createElement("option");
-                    option.value = optionValue;
-                    option.textContent = optionValue;
-                    selectElement.appendChild(option);
+                parameter.options.forEach(option => {
+                    const optionElement = document.createElement("option");
+                    optionElement.value = option.value || option; // Check if option is an object with value property
+                    optionElement.textContent = option.label || option; // Check if option is an object with label property
+                    selectElement.appendChild(optionElement);
                 });
 
                 const displayName = parameterDisplayNames[parameter.name] || parameter.displayName || parameter.name;
