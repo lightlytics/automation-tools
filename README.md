@@ -1,5 +1,5 @@
 # automation-tools
-Automation tools for easier Lightlytics Integration
+This repository provides various Automation Tools for the Stream Security platform
 
 ## Installation
 To install the dependencies, run the following command:

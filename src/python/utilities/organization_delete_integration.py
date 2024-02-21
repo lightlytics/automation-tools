@@ -64,9 +64,9 @@ def main(environment, accounts):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Lightlytics environment with every account in the organization.')
+        description='This script will integrate Stream environment with every account in the organization.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain", required=True)
+        "--environment_sub_domain", help="The Stream environment sub domain", required=True)
     parser.add_argument(
         "--accounts", help="Accounts list to iterate when creating the report (e.g '123123123123,321321321321')",
         required=False)

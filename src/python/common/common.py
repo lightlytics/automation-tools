@@ -12,13 +12,13 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
     from src.python.common.logger import Logger
 
-log = logging.getLogger("lightlytics_external_tools")
+log = logging.getLogger("stream_external_tools")
 if len(log.handlers) == 0:
     log = Logger().get_logger()
 
 
 def get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage):
-    log.info(f"Trying to login into Lightlytics in environment {environment}")
+    log.info(f"Trying to login into Stream in environment {environment}")
     ll_url = f"https://{environment}.streamsec.io"
     if stage:
         ll_url = f"https://{environment}.lightops.io"

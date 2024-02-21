@@ -3,7 +3,7 @@ import logging
 
 class Logger:
     def __init__(self, level=logging.INFO):
-        name = "lightlytics_external_tools"
+        name = "stream_external_tools"
         # Create a custom logger with the given name
         self.logger = logging.getLogger(name)
         # Set the logging level

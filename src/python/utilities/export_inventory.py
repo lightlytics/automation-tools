@@ -18,11 +18,12 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, resource_type, 
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
-    # Connecting to Lightlytics
+    # Connecting to Stream
     graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     log.info("Get all accounts")
-    all_accounts = [a['cloud_account_id'] for a in graph_client.get_accounts()]
+    all_accounts_raw = graph_client.get_accounts()
+    all_accounts = [a['cloud_account_id'] for a in all_accounts_raw]
     log.info(f"Found {len(all_accounts)} account in workspace: {ws_name}")
 
     if accounts:
@@ -58,16 +59,17 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, resource_type, 
     log.info("Finished adding resources!")
     log.info(f'Found {sum([len(r) for r in report_details["accounts"].values()])} resources of type "{resource_type}"')
 
-    csv_file = f'Lightlytics inventory export - {environment}.csv'
+    csv_file = f'Stream inventory export - {environment}.csv'
 
     log.info(f"Generating CSV file, file name: {csv_file}")
     with open(csv_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['Account', 'ID'])
+        writer.writerow(['Account', 'Account name', 'Resource ID', 'Resource Name', 'Resource Tags'])
         for account, resources in report_details['accounts'].items():
             for resource in resources:
-                resource_id = resource['id']
-                writer.writerow([account, resource_id])
+                account_name = [a['display_name'] for a in all_accounts_raw if a['cloud_account_id'] == account][0]
+                row = [account, account_name, resource['id'], resource['display_name'], resource['cloud_tags']]
+                writer.writerow(row)
     log.info("File generated successfully, export complete!")
 
     return csv_file
@@ -94,13 +96,13 @@ def process_tag(tag):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Lightlytics environment with every account in the organization.')
+        description='This script will integrate Stream environment with every account in the organization.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain", required=True)
+        "--environment_sub_domain", help="The Stream environment sub domain", required=True)
     parser.add_argument(
-        "--environment_user_name", help="The Lightlytics environment user name", required=True)
+        "--environment_user_name", help="The Stream environment user name", required=True)
     parser.add_argument(
-        "--environment_password", help="The Lightlytics environment password", required=True)
+        "--environment_password", help="The Stream environment password", required=True)
     parser.add_argument(
         "--environment_f2a_token", help="F2A Token if set", default=None)
     parser.add_argument(
@@ -110,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--accounts", help="Accounts list to iterate when creating the report", required=False)
     parser.add_argument(
-        "--tags", help="Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics', "
+        "--tags", help="Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=StreamSec', "
                        "the '~=' means 'contains' instead of 'equal' operand, tags divided by ','",
         required=False)
     parser.add_argument(

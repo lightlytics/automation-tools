@@ -16,7 +16,7 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
-    # Connecting to Lightlytics
+    # Connecting to Stream
     graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     # Find all ENIs
@@ -61,13 +61,13 @@ def is_external_ip(ip):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Lightlytics environment with every account in the organization.')
+        description='This script will integrate Stream environment with every account in the organization.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain", required=True)
+        "--environment_sub_domain", help="The Stream environment sub domain", required=True)
     parser.add_argument(
-        "--environment_user_name", help="The Lightlytics environment user name", required=True)
+        "--environment_user_name", help="The Stream environment user name", required=True)
     parser.add_argument(
-        "--environment_password", help="The Lightlytics environment password", required=True)
+        "--environment_password", help="The Stream environment password", required=True)
     parser.add_argument(
         "--environment_f2a_token", help="F2A Token if set", default=None)
     parser.add_argument(

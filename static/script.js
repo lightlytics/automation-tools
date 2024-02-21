@@ -217,7 +217,7 @@ async function playLottieAnimation() {
 }
 
 const parameterDisplayNames = {
-    "environment_sub_domain": "Environment Sub-Domain (<strong>xyz</strong>.lightlytics.com)",
+    "environment_sub_domain": "Environment Sub-Domain (<strong>xyz</strong>.streamsec.io)",
     "environment_user_name": "Environment User Name (Email)",
     "environment_password": "Environment Password",
     "environment_f2a_token": "Environment F2A Token",

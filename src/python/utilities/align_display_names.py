@@ -16,8 +16,8 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, aws_profile_name):
-    print(color("Trying to login into Lightlytics", "blue"))
-    ll_url = f"https://{environment}.lightlytics.com/graphql"
+    print(color("Trying to login into Stream", "blue"))
+    ll_url = f"https://{environment}.streamsec.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password)
     print(color("Logged in successfully!", "green"))
 
@@ -35,7 +35,7 @@ def main(environment, ll_username, ll_password, aws_profile_name):
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     print(color(f"Found {len(sub_accounts)} AWS accounts", "blue"))
 
-    # Getting Lightlytics integrated accounts
+    # Getting Stream integrated accounts
     ll_integrated_accounts = [a["aws_account_id"] for a in graph_client.get_accounts()]
 
     # Setting new variable for fixed accounts
@@ -64,13 +64,13 @@ def main(environment, ll_username, ll_password, aws_profile_name):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Lightlytics environment with every account in the organization.')
+        description='This script will integrate Stream environment with every account in the organization.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Lightlytics environment sub domain")
+        "--environment_sub_domain", help="The Stream environment sub domain")
     parser.add_argument(
-        "--environment_user_name", help="The Lightlytics environment user name")
+        "--environment_user_name", help="The Stream environment user name")
     parser.add_argument(
-        "--environment_password", help="The Lightlytics environment password")
+        "--environment_password", help="The Stream environment password")
     parser.add_argument(
         "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
         default="staging")
