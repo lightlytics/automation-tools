@@ -75,10 +75,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 defaultOption.textContent = parameter.placeholder;
                 selectElement.appendChild(defaultOption);
 
-                parameter.options.forEach(option => {
+                // Sort llResources by displayName
+                const sortedResources = llResources.slice().sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+                sortedResources.forEach(option => {
                     const optionElement = document.createElement("option");
-                    optionElement.value = option.value || option; // Check if option is an object with value property
-                    optionElement.textContent = option.label || option; // Check if option is an object with label property
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.displayName;
                     selectElement.appendChild(optionElement);
                 });
 
