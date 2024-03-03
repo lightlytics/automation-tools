@@ -55,7 +55,7 @@ def wait_for_cloudformation(sub_account, cft_id, cf_client, timeout=240):
     return True
 
 
-def create_stack_payload(stack_name, sub_account_template_url):
+def create_stack_payload(stack_name, sub_account_template_url, custom_tags=None):
     stack_creation_payload = {
         "StackName": stack_name,
         "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
@@ -63,6 +63,8 @@ def create_stack_payload(stack_name, sub_account_template_url):
         "EnableTerminationProtection": False,
         "TemplateURL": sub_account_template_url
     }
+    if custom_tags:
+        stack_creation_payload['Tags'] = custom_tags
     return stack_creation_payload
 
 
@@ -82,7 +84,7 @@ def get_active_regions(sub_account_session, regions):
 
 
 def deploy_all_collection_stacks(
-        active_regions, sub_account_session, random_int, account_information, sub_account):
+        active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=None):
     print(color(
         f"Account: {sub_account[0]} | Adding collection CFT stack for realtime events for each region in parallel "
         f"(Max 8 workers)", color="blue"))
@@ -93,7 +95,7 @@ def deploy_all_collection_stacks(
         # Iterate over active_regions and submit each task to the executor
         for region in active_regions:
             future = executor.submit(deploy_collection_stack, account_information,
-                                     sub_account_session, sub_account, region, random_int, False)
+                                     sub_account_session, sub_account, region, random_int, custom_tags, False)
             futures.append(future)
     # Wait for all the tasks to complete
     concurrent.futures.wait(futures)
@@ -101,13 +103,14 @@ def deploy_all_collection_stacks(
     return
 
 
-def deploy_collection_stack(account_information, sub_account_session, sub_account, region, random_int, wait=True):
+def deploy_collection_stack(
+        account_information, sub_account_session, sub_account, region, random_int, custom_tags, wait=True):
     # Existing code inside the for loop
     print(color(f"Account: {sub_account[0]} | Adding collection CFT stack for {region}", "blue"))
     region_client = sub_account_session.client('cloudformation', region_name=region)
     stack_creation_payload = create_stack_payload(
         f"LightlyticsStack-collection-{region}-{random_int}",
-        account_information["collection_template_url"])
+        account_information["collection_template_url"], custom_tags=custom_tags)
     collection_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
     print(color(f"Account: {sub_account[0]} | Collection stack {collection_stack_id} deploying", "blue"))
 
@@ -116,7 +119,8 @@ def deploy_collection_stack(account_information, sub_account_session, sub_accoun
         wait_for_cloudformation(sub_account, collection_stack_id, region_client)
 
 
-def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int, wait=True):
+def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int, wait=True,
+                      custom_tags=None):
     sub_account_template_url = account_information["template_url"]
     print(color(f"Account: {sub_account[0]} | Finished fetching information", "green"))
 
@@ -124,7 +128,8 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
     cf = sub_account_session.client('cloudformation')
 
     print(color(f"Account: {sub_account[0]} | Creating the CFT stack using Boto", "blue"))
-    stack_creation_payload = create_stack_payload(f"LightlyticsStack-{random_int}", sub_account_template_url)
+    stack_creation_payload = create_stack_payload(
+        f"LightlyticsStack-{random_int}", sub_account_template_url, custom_tags=custom_tags)
     sub_account_stack_id = cf.create_stack(**stack_creation_payload)["StackId"]
     print(color(f"Account: {sub_account[0]} | {sub_account_stack_id} Created successfully", "green"))
 

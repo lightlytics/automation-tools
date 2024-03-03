@@ -15,11 +15,15 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel, ws_id=None):
+def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel, ws_id=None, custom_tags=None):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
+
+    if custom_tags:
+        custom_tags_split = custom_tags.split(",")
+        custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags_split]
 
     print(color("Trying to login into Stream Security", "blue"))
     ll_url = f"https://{environment}.streamsec.io/graphql"
@@ -56,18 +60,18 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int, parallel
+                sub_account, sts_client, graph_client, regions, random_int, custom_tags, parallel
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
     else:
         for sub_account in sub_accounts:
-            integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int)
+            integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, custom_tags)
 
     print(color("Integration finished successfully!", "green"))
 
 
-def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, parallel=False):
+def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, custom_tags, parallel=False):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
@@ -117,7 +121,8 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
                     deploy_all_collection_stacks(
-                        regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account)
+                        regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account,
+                        custom_tags=custom_tags)
                 else:
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
                 return
@@ -142,7 +147,8 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
         # Deploying the initial integration stack
         if not deploy_init_stack(
-                account_information, graph_client, sub_account, sub_account_session, random_int, not parallel):
+                account_information, graph_client, sub_account, sub_account_session, random_int, not parallel,
+                custom_tags=custom_tags):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with init stack deployment"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
@@ -159,7 +165,7 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
         # Deploying collections stacks for all regions
         deploy_all_collection_stacks(
-            active_regions, sub_account_session, random_int, account_information, sub_account)
+            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags)
 
         return
 
@@ -204,6 +210,9 @@ if __name__ == "__main__":
         "--parallel", help="Number of threads for parallel integration", type=int, required=False)
     parser.add_argument(
         "--ws_id", help="ID of the WS to deploy to", required=False)
+    parser.add_argument(
+        "--custom_tags", help="Add custom tags to CFT Stacks and all resources, format: Name|Test,Env|Dev",
+        required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.aws_profile_name, args.accounts, args.parallel, args.ws_id)
+         args.aws_profile_name, args.accounts, args.parallel, args.ws_id, args.custom_tags)
