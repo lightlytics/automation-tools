@@ -22,8 +22,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
         accounts = accounts.replace(" ", "").split(",")
 
     if custom_tags:
-        custom_tags_split = custom_tags.split(",")
-        custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags_split]
+        custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags.split(",")]
 
     print(color("Trying to login into Stream Security", "blue"))
     ll_url = f"https://{environment}.streamsec.io/graphql"
