@@ -97,4 +97,4 @@ if __name__ == "__main__":
         "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.environment_f2a_token,
-         args.ws_name, args.start_timestamp, args.end_timestamp, args.period, args.stage)
+         args.ws_name, args.start_timestamp, args.end_timestamp, args.period, stage=args.stage)

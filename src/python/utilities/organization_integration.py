@@ -214,4 +214,4 @@ if __name__ == "__main__":
         required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.aws_profile_name, args.accounts, args.parallel, args.ws_id, args.custom_tags)
+         args.aws_profile_name, args.accounts, args.parallel, ws_id=args.ws_id, custom_tags=args.custom_tags)
