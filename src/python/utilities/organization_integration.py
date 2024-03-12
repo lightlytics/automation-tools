@@ -15,14 +15,20 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel, ws_id=None, custom_tags=None):
+def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel,
+         ws_id=None, custom_tags=None, regions_to_integrate=None):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
+    # Prepare tags if provided
     if custom_tags:
         custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags.split(",")]
+
+    # Prepare regions if provided
+    if regions_to_integrate:
+        regions_to_integrate = regions_to_integrate.split(",")
 
     print(color("Trying to login into Stream Security", "blue"))
     ll_url = f"https://{environment}.streamsec.io/graphql"
@@ -59,18 +65,20 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int, custom_tags, parallel
+                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, parallel
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
     else:
         for sub_account in sub_accounts:
-            integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, custom_tags)
+            integrate_sub_account(
+                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate)
 
     print(color("Integration finished successfully!", "green"))
 
 
-def integrate_sub_account(sub_account, sts_client, graph_client, regions, random_int, custom_tags, parallel=False):
+def integrate_sub_account(
+        sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, parallel=False):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
@@ -98,7 +106,10 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
-                potential_regions = get_active_regions(sub_account_session, regions)
+                if regions_to_integrate:
+                    potential_regions = regions_to_integrate
+                else:
+                    potential_regions = get_active_regions(sub_account_session, regions)
                 if sorted(current_regions) != sorted(potential_regions):
                     potential_regions.extend(current_regions)
                     potential_regions = list(set(potential_regions))
@@ -153,7 +164,10 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
             raise Exception(err_msg)
 
         print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
-        active_regions = get_active_regions(sub_account_session, regions)
+        if regions_to_integrate:
+            active_regions = regions_to_integrate
+        else:
+            active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
         # Updating the regions in StreamSecurity and waiting
@@ -175,6 +189,21 @@ def integrate_sub_account(sub_account, sts_client, graph_client, regions, random
 
 
 def update_regions(graph_client, sub_account, active_regions, wait=True):
+    print(color(f"Account: {sub_account[0]} | Wait until account is initialized", "blue"))
+    count = 0
+    while True:
+        sub_account_status = \
+            [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]][0]['status']
+        if sub_account_status == "UNINITIALIZED":
+            time.sleep(1)
+            count += 1
+        else:
+            break
+        if count == 300:
+            print(color(f"Account: {sub_account[0]} | Timed out after 5 minutes", "red"))
+            raise Exception("Status change timed out, account still in uninitialized")
+    print(color(f"Account: {sub_account[0]} | Account changed status to: {sub_account_status}", "blue"))
+
     print(color(f"Account: {sub_account[0]} | Updating regions in StreamSecurity according to active regions", "blue"))
     graph_client.edit_regions(sub_account[0], active_regions)
     print(color(f"Account: {sub_account[0]} | Updated regions to {active_regions}", "green"))
@@ -212,6 +241,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--custom_tags", help="Add custom tags to CFT Stacks and all resources, format: Name|Test,Env|Dev",
         required=False)
+    parser.add_argument(
+        "--regions", help="Force select specific regions to integrate, separated by comma", required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
-         args.aws_profile_name, args.accounts, args.parallel, ws_id=args.ws_id, custom_tags=args.custom_tags)
+         args.aws_profile_name, args.accounts, args.parallel,
+         ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions)
