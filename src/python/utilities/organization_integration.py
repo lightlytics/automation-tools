@@ -166,10 +166,11 @@ def integrate_sub_account(
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
-        print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
+        print(color(f"Account: {sub_account[0]} | Setting regions", "blue"))
         if regions_to_integrate:
             active_regions = regions_to_integrate
         else:
+            print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
             active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
