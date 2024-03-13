@@ -43,11 +43,9 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_timestamp
     log.info("Cost integrated, continuing!")
 
     log.info(f"Getting cost data, from: {start_timestamp}, to: {end_timestamp}")
-    cost_chart = graph_client.get_cost_chart(start_ts, end_ts, group_by=period)
+    cost_chart = graph_client.get_cost_chart(
+        start_ts, end_ts, group_by=period, ignore_discounts="gross_cost" if ignore_discounts else "net_cost")
     log.info("Fetched cost information successfully!")
-
-    if ignore_discounts:
-        cost_chart = [row for row in cost_chart if row['total_cost'] > 0]
 
     csv_file = f'{environment.upper()} cost report {start_timestamp} {end_timestamp}.csv'
 

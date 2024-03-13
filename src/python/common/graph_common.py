@@ -467,7 +467,7 @@ class GraphCommon(object):
         integration_status = self.graph_query(operation, {}, query)["data"]["cost_data_status"]["status"]
         return True if integration_status == "data_exists" else False
 
-    def get_cost_chart(self, from_timestamp, to_timestamp, group_by=None):
+    def get_cost_chart(self, from_timestamp, to_timestamp, group_by=None, ignore_discounts=None):
         """
         Get the cost information.
         :returns (list) - Cost data.
@@ -488,6 +488,8 @@ class GraphCommon(object):
         }
         if group_by:
             variables["period"] = group_by
+        if ignore_discounts:
+            variables["total_cost_type"] = ignore_discounts
         return self.graph_query(operation, variables, query)["data"]["cost_reports"]["results"]
 
     def get_cost_chart_main_pipeline(self, from_timestamp, to_timestamp, group_by=None):
