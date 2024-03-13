@@ -16,7 +16,7 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, aws_profile_name, accounts, parallel,
-         ws_id=None, custom_tags=None, regions_to_integrate=None):
+         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole"):
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
@@ -65,25 +65,28 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, parallel
+                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
+                control_role, parallel
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
     else:
         for sub_account in sub_accounts:
             integrate_sub_account(
-                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate)
+                sub_account, sts_client, graph_client, regions, random_int,
+                custom_tags, regions_to_integrate, control_role)
 
     print(color("Integration finished successfully!", "green"))
 
 
 def integrate_sub_account(
-        sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, parallel=False):
+        sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
+        parallel=False):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
         assumed_role = sts_client.assume_role(
-            RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
+            RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
             RoleSessionName='MySessionName'
         )
         print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
@@ -243,7 +246,10 @@ if __name__ == "__main__":
         required=False)
     parser.add_argument(
         "--regions", help="Force select specific regions to integrate, separated by comma", required=False)
+    parser.add_argument(
+        "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole", required=False)
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password,
          args.aws_profile_name, args.accounts, args.parallel,
-         ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions)
+         ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
+         control_role=args.control_role)
