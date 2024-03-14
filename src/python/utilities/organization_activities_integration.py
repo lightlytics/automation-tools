@@ -1,6 +1,8 @@
 import argparse
 import boto3
+import json
 import os
+import random
 import sys
 
 # Add the project root directory to the Python path
@@ -21,7 +23,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts,
         accounts = accounts.replace(" ", "").split(",")
 
     print(color("Trying to login into Stream Security", "blue"))
-    ll_url = f"https://{environment}.lightops.io/graphql"
+    ll_url = f"https://{environment}.streamsec.io/graphql"
     graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
     print(color("Logged in successfully!", "green"))
 
@@ -48,7 +50,8 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts,
     print(color(f"Accounts to-be updated: {[sa[0] for sa in sub_accounts]}", "blue"))
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Submit tasks to the thread pool
-        results = [executor.submit(integrate_cloudtrail, sub_account, sts_client, graph_client, control_role)
+        results = [executor.submit(integrate_cloudtrail, sub_account, sts_client, graph_client, control_role,
+                                   environment)
                    for sub_account in sub_accounts]
         # Wait for all tasks to complete
         concurrent.futures.wait(results)
@@ -56,7 +59,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts,
     print(color("Integration finished successfully!", "green"))
 
 
-def integrate_cloudtrail(sub_account, sts_client, graph_client, control_role):
+def integrate_cloudtrail(sub_account, sts_client, graph_client, control_role, environment):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         # Assume the role in the sub_account[0]
@@ -76,14 +79,73 @@ def integrate_cloudtrail(sub_account, sts_client, graph_client, control_role):
         ct_client = sub_account_session.client('cloudtrail')
         multi_region_trails = [t for t in ct_client.describe_trails().get('trailList') if t["IsMultiRegionTrail"]]
         if len(multi_region_trails) == 0:
-            print(color(f"Account: {sub_account[0]} | Multi region trail not found, create it first", "red"))
-            return
+            raise Exception(f"Account: {sub_account[0]} | Multi region trail not found, create it first")
+        relevant_s3_name = multi_region_trails[0].get('S3BucketName')
         print(color(f"Account: {sub_account[0]} | Found {len(multi_region_trails)} multi region trails", "green"))
 
         print(color(f"Account: {sub_account[0]} | Getting realtime region for the integration", "blue"))
         account_realtime_regions = [r['region_name'] for r in
                                     graph_client.get_specific_account(sub_account[0])['realtime_regions']]
         print(color(f"Account: {sub_account[0]} | Found {len(account_realtime_regions)} regions", "green"))
+
+        for region in account_realtime_regions:
+            print(color(f"Account: {sub_account[0]} | Connection region: '{region}'", "blue"))
+
+            print(color(f"Account: {sub_account[0]} | Searching for IAM Collection Lambda", "blue"))
+            lambda_client = sub_account_session.client('lambda')
+            relevant_lambda = [la for la in lambda_client.list_functions().get('Functions') if
+                               "IAMLogsCollection" in la['FunctionName'] and
+                               environment in la['Environment']['Variables'].get("API_URL", None)][0]
+            print(color(f"Account: {sub_account[0]} | "
+                        f"Found the desired lambda: {relevant_lambda['FunctionName']}", "green"))
+
+            print(color(f"Account: {sub_account[0]} | Adding Lambda permissions", "blue"))
+            lambda_client.add_permission(
+                FunctionName=relevant_lambda['FunctionName'],
+                StatementId='AllowToBeInvoked',
+                Action='lambda:InvokeFunction',
+                Principal='s3.amazonaws.com',
+                SourceAccount=sub_account[0],
+                SourceArn=f'arn:aws:s3:::{relevant_s3_name}'
+            )
+            print(color(f"Account: {sub_account[0]} | Lambda permissions added successfully", "green"))
+
+            print(color(f"Account: {sub_account[0]} | Create trigger policy", "blue"))
+            boto_iam = sub_account_session.client('iam')
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Action": ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation",
+                               "s3:GetObjectVersion", "s3:GetLifecycleConfiguration"],
+                    "Resource": [f"arn:aws:s3:::{relevant_s3_name}/*"],
+                    "Effect": "Allow"}
+                ]
+            }
+            policy_name = f"StreamIAMCollectionPolicy-{random.randint(100000, 999999)}"
+            policy_arn = boto_iam.create_policy(
+                PolicyName=policy_name, PolicyDocument=json.dumps(policy))['Policy']['Arn']
+            print(color(f"Account: {sub_account[0]} | Policy '{policy_name}' created successfully", "green"))
+
+            print(color(f"Account: {sub_account[0]} | Attaching '{policy_name}' to Lambda's role", "blue"))
+            lambda_role_name = relevant_lambda['Role'].split("/")[-1]
+            boto_iam.attach_role_policy(RoleName=lambda_role_name, PolicyArn=policy_arn)
+            print(color(f"Account: {sub_account[0]} | Attached successfully", "green"))
+
+            print(color(f"Account: {sub_account[0]} | Adding {relevant_s3_name} as Lambda trigger", "blue"))
+            s3_client = sub_account_session.client('s3')
+            s3_client.put_bucket_notification_configuration(
+                Bucket=relevant_s3_name,
+                NotificationConfiguration={
+                    'LambdaFunctionConfigurations': [{
+                        'LambdaFunctionArn': relevant_lambda['FunctionArn'],
+                        'Events': ['s3:ObjectCreated:*']
+                    }]
+                },
+                SkipDestinationValidation=True
+            )
+            print(color(f"Account: {sub_account[0]} | Trigger added successfully", "green"))
+
+            print(color(f"Account: {sub_account[0]} | Successfully integrated in region: {region}", "green"))
 
     except Exception as e:
         err_msg = f"Account: {sub_account[0]} | Something went wrong: {e}"
