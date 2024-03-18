@@ -14,10 +14,16 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None,
-         action=None, dst_resource_id=None, start_time=None, end_time=None, src_public=None, protocols=None):
+def main(environment, ll_username, ll_password, ll_f2a, ws_name, action=None, dst_resource_id=None, start_time=None,
+         end_time=None, src_public=None, protocols=None, stage=None):
     # Connecting to Stream
     graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
+
+    # Setting up variables
+    if start_time:
+        start_time += "T00:00:00.000Z"
+    if end_time:
+        end_time += "T23:59:59.999Z"
 
     # Get flow logs
     flow_logs = graph_client.get_flow_logs(
@@ -65,9 +71,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dst_resource_id", help="Choose the destination resource ID to filter by")
     parser.add_argument(
-        "--start_time", help="Choose the starting time, format: 'YYYY-MM-DDTHH:MM:SS'")
+        "--start_time", help="Choose the starting time, format: 'YYYY-MM-DD'")
     parser.add_argument(
-        "--end_time", help="Choose the ending time, format: 'YYYY-MM-DDTHH:MM:SS'")
+        "--end_time", help="Choose the ending time, format: 'YYYY-MM-DD'")
     parser.add_argument(
         "--src_public", action="store_true", help="Pass this arg to get only Internet access")
     parser.add_argument(

@@ -51,6 +51,15 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" }
+        ],
+        "/export_flow_logs": [
+            ...defaultParameters,
+            { name: "action", type: "text", placeholder: "ACCEPT/REJECT, leave blank for both" },
+            { name: "dst_resource_id", type: "text", placeholder: "Resource ID for destination" },
+            { name: "start_time", type: "date" },
+            { name: "end_time", type: "date" },
+            { name: "src_public", type: "text", placeholder: "If you want to filter only public source traffic, leave blank for all" },
+            { name: "protocols", type: "text", placeholder: "TCP/UDP, leave blank for both" }
         ]
     };
 

@@ -652,9 +652,9 @@ class GraphCommon(object):
         if dst_resource_id:
             variables['filters']['dst_resource_id'] = dst_resource_id
         if start_time:
-            variables['filters']['start']['gte'] = start_time + "+02:00"
+            variables['filters']['start']['gte'] = start_time
         if end_time:
-            variables['filters']['start']['lte'] = end_time + "+02:00"
+            variables['filters']['start']['lte'] = end_time
         if src_public:
             variables['filters']['src_ip_filter']['is_internet'] = True
         if protocols:

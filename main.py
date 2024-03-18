@@ -16,6 +16,7 @@ from src.python.utilities import generate_cost_recommendations as cost_recommend
 from src.python.utilities import generate_compliance_report as compliance_report
 from src.python.utilities import export_inventory as export_inventory
 from src.python.utilities import generate_cost_report_main_pipeline as cost_report_main_pipeline
+from src.python.utilities import export_flow_logs as export_fl
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -30,10 +31,8 @@ async def read_root(request: Request):
 @app.post("/generate_cost_report")
 def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Generate Cost Report requested - {payload['environment_sub_domain'].replace('!', '')}")
-    if not bool(payload.get('environment_f2a_token', None)):
-        payload['environment_f2a_token'] = None
     arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload['environment_f2a_token'], payload['ws_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
                  payload['start_timestamp'], payload['end_timestamp'], payload['period'],
                  payload.get('ignore_discounts', None)]
     if payload['environment_sub_domain'].startswith('!'):
@@ -54,10 +53,8 @@ def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTa
 @app.post("/generate_cost_report_main_pipeline")
 def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Generate Cost Report Main Pipeline requested - {payload['environment_sub_domain'].replace('!', '')}")
-    if not bool(payload.get('environment_f2a_token', None)):
-        payload['environment_f2a_token'] = None
     arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload['environment_f2a_token'], payload['ws_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
                  payload['start_timestamp'], payload['end_timestamp'], payload['period']]
     if payload['environment_sub_domain'].startswith('!'):
         arguments.append("true")
@@ -77,10 +74,8 @@ def generate_cost_report(payload: Dict[Any, Any], background_tasks: BackgroundTa
 @app.post("/generate_cost_recommendations")
 def generate_cost_recommendations(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Generate Cost Recommendations requested - {payload['environment_sub_domain'].replace('!', '')}")
-    if not bool(payload.get('environment_f2a_token', None)):
-        payload['environment_f2a_token'] = None
     arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload['environment_f2a_token'], payload['ws_name']]
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name']]
     if payload['environment_sub_domain'].startswith('!'):
         arguments.append("true")
     try:
@@ -99,10 +94,8 @@ def generate_cost_recommendations(payload: Dict[Any, Any], background_tasks: Bac
 @app.post("/generate_compliance_report")
 async def generate_compliance_report(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Generate Compliance Report requested - {payload['environment_sub_domain'].replace('!', '')}")
-    if not bool(payload.get('environment_f2a_token', None)):
-        payload['environment_f2a_token'] = None
     arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload['environment_f2a_token'], payload['ws_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
                  payload['compliance_standard'], payload.get('accounts', None), payload.get('label', None)]
     if payload['environment_sub_domain'].startswith('!'):
         arguments.append("true")
@@ -118,15 +111,35 @@ async def generate_compliance_report(payload: Dict[Any, Any], background_tasks: 
 @app.post("/generate_export_inventory")
 def generate_export_inventory(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Export inventory requested - {payload['environment_sub_domain'].replace('!', '')}")
-    if not bool(payload.get('environment_f2a_token', None)):
-        payload['environment_f2a_token'] = None
     arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload['environment_f2a_token'], payload['ws_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
                  payload['resource_type'], payload.get('accounts', None), payload.get('tags', None)]
     if payload['environment_sub_domain'].startswith('!'):
         arguments.append("true")
     try:
         file_name = export_inventory.main(*arguments)
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="{file_name}"'
+        }
+        background_tasks.add_task(remove_file, file_name)
+        with open(file_name) as csv_file:
+            return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/export_flow_logs")
+def export_flow_logs(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Export Flow Logs requested - {payload['environment_sub_domain'].replace('!', '')}")
+    arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
+                 payload.get('action', None), payload.get('dst_resource_id', None), payload.get('start_time', None),
+                 payload.get('end_time', None), payload.get('src_public', None), payload.get('protocols', None)]
+    if payload['environment_sub_domain'].startswith('!'):
+        arguments.append("true")
+    try:
+        file_name = export_fl.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'
