@@ -627,6 +627,40 @@ class GraphCommon(object):
                  "__typename}}")
         return self.graph_query(operation, variables, query)['data']['cve_resources']['results']
 
+    # Flow logs methods
+    def get_flow_logs(self, skip=0, limit=999, action=None, dst_resource_id=None, start_time=None, end_time=None,
+                      src_public=False, protocols=None):
+        operation = 'IPTraffic'
+        query = ("query IPTraffic($filters: ConnectionsFilters, $limit: Int, $skip: Int){IPTraffic(filters: $filters, "
+                 "limit: $limit, skip: $skip){results{src_port src_resource_id src_resource_type "
+                 "src_resource_display_name src_ip dst_port dst_resource_id dst_resource_type "
+                 "dst_resource_display_name dst_ip start end bytes action s3_action protocol application_name "
+                 "application_desc src_geo_iso dst_geo_iso __typename}totalCount __typename}}")
+
+        variables = {
+            "skip": skip,
+            "limit": limit,
+            "filters": {}
+        }
+        if start_time or end_time:
+            variables['filters']['start'] = dict()
+        if src_public:
+            variables['filters']['src_ip_filter'] = dict()
+
+        if action:
+            variables['filters']['action'] = [action]
+        if dst_resource_id:
+            variables['filters']['dst_resource_id'] = dst_resource_id
+        if start_time:
+            variables['filters']['start']['gte'] = start_time + "+02:00"
+        if end_time:
+            variables['filters']['start']['lte'] = end_time + "+02:00"
+        if src_public:
+            variables['filters']['src_ip_filter']['is_internet'] = True
+        if protocols:
+            variables['filters']['protocol'] = [protocols]
+        return self.graph_query(operation, variables, query)['data']['IPTraffic']['results']
+
     # General methods
     @staticmethod
     def create_graph_payload(operation_name, variables, query):
