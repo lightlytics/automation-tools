@@ -658,7 +658,7 @@ class GraphCommon(object):
         if src_public:
             variables['filters']['src_ip_filter']['is_internet'] = True
         if protocols:
-            variables['filters']['protocol'] = [protocols]
+            variables['filters']['protocol'] = protocols.split(",")
         return self.graph_query(operation, variables, query)['data']['IPTraffic']['results']
 
     # General methods
