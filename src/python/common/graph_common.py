@@ -344,6 +344,16 @@ class GraphCommon(object):
                 "{account_id}}"
         return self.graph_query(operation, {"resource_id": resource_id}, query)['data']['resource']['account_id']
 
+    def get_resource_associated_resources(self, resource_id):
+        """ Get resource associated resources.
+        """
+        operation = 'SearchAssociatedResources'
+        query = "query SearchAssociatedResources($filters: SearchFilters, $simulation_timestamp: Timestamp, " \
+                "$skip: Int, $limit: Int){search(filters: $filters simulation_timestamp: $simulation_timestamp " \
+                "skip: $skip limit: $limit){results{id type display_name __typename}__typename}}"
+        variables = {"filters": {"associated_resource_id": resource_id}}
+        return self.graph_query(operation, variables, query)['data']['search']['results']
+
     def resources_search(self, account, resource_type, tags=None):
         """ Search resources by account and types.
             :param account (str)        - Account to search in.
