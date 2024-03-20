@@ -51,19 +51,16 @@ def enrich_violations(graph_client, violation):
     resource_details = graph_client.get_resource_configuration_by_id(violation['resource_id'])
     violation['dns_name'] = resource_details['DNSName']
     listeners = resource_details.get('listener_nlb', None)
+    violation['exposed_ports'] = []
+    violation['ip_addresses'] = []
     if listeners:
         violation['exposed_ports'] = [p['Port'] for p in listeners]
-    else:
-        violation['exposed_ports'] = []
     azs = [ip_add.get('nlb_load_balancer_addresses', None) for ip_add in
            resource_details.get('nlb_availability_zone', None)]
     if azs:
-        violation['ip_addresses'] = []
         for az in azs:
             ips = [ip['IpAddress'] for ip in az]
             violation['ip_addresses'].extend(ips)
-    else:
-        violation['ip_addresses'] = []
     associated_resources = graph_client.get_resource_associated_resources(violation['resource_id'])
     violation['CNAME'] = [ar['display_name'] for ar in associated_resources if ar['type'] == 'route53']
 
