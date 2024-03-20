@@ -58,6 +58,7 @@ def enrich_violations(graph_client, violation):
         violation['ip_addresses'].extend(ips)
     associated_resources = graph_client.get_resource_associated_resources(violation['resource_id'])
     violation['CNAME'] = [ar['display_name'] for ar in associated_resources if ar['type'] == 'route53']
+    violation['dns_name'] = resource_details['DNSName']
 
 
 if __name__ == "__main__":
