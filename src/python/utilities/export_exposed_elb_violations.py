@@ -51,7 +51,11 @@ def enrich_violations(graph_client, violation):
     resource_details = graph_client.get_resource_configuration_by_id(violation['resource_id'])
     violation['dns_name'] = resource_details['DNSName']
     listeners = resource_details.get('listener_elb')
-    violation['exposed_ports'] = [p['LoadBalancerPort'] for p in listeners]
+    violation['exposed_ports'] = []
+    if listeners:
+        violation['exposed_ports'] = [p['LoadBalancerPort'] for p in listeners]
+    associated_resources = graph_client.get_resource_associated_resources(violation['resource_id'])
+    violation['CNAME'] = [ar['display_name'] for ar in associated_resources if ar['type'] == 'route53']
 
 
 if __name__ == "__main__":
