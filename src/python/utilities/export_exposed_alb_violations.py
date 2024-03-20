@@ -49,11 +49,14 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
 
 def enrich_violations(graph_client, violation):
     resource_details = graph_client.get_resource_configuration_by_id(violation['resource_id'])
-    listeners = resource_details.get('listener_alb')
-    violation['exposed_ports'] = [p['Port'] for p in listeners]
+    violation['dns_name'] = resource_details['DNSName']
+    listeners = resource_details.get('listener_alb', None)
+    if listeners:
+        violation['exposed_ports'] = [p['Port'] for p in listeners]
+    else:
+        violation['exposed_ports'] = []
     associated_resources = graph_client.get_resource_associated_resources(violation['resource_id'])
     violation['CNAME'] = [ar['display_name'] for ar in associated_resources if ar['type'] == 'route53']
-    violation['dns_name'] = resource_details['DNSName']
 
 
 if __name__ == "__main__":
