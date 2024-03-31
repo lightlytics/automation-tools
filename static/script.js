@@ -1,4 +1,3 @@
-import { complianceStandards } from './complianceStandards.js';
 import { llResources } from './llResources.js';
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -30,18 +29,6 @@ document.addEventListener("DOMContentLoaded", function () {
         ],
         "/export_ec2_os_info": [
             ...defaultParameters
-        ],
-        "/generate_compliance_report": [
-            ...defaultParameters,
-            {
-                name: "compliance_standard",
-                type: "select",
-                options: complianceStandards,
-                placeholder: "Choose Compliance Standard",
-                required: true
-            },
-            { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
-            { name: "label", type: "text", placeholder: "Not mandatory, Add a specific label" }
         ],
         "/generate_export_inventory": [
             ...defaultParameters,
