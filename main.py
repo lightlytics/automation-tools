@@ -17,6 +17,7 @@ from src.python.utilities import generate_compliance_report as compliance_report
 from src.python.utilities import export_inventory as export_inventory
 from src.python.utilities import generate_cost_report_main_pipeline as cost_report_main_pipeline
 from src.python.utilities import export_flow_logs as export_fl
+from src.python.utilities import export_ec2_os_info as export_ec2_os
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -80,6 +81,26 @@ def generate_cost_recommendations(payload: Dict[Any, Any], background_tasks: Bac
         arguments.append("true")
     try:
         file_name = cost_recommendations.main(*arguments)
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="{file_name}"'
+        }
+        background_tasks.add_task(remove_file, file_name)
+        with open(file_name) as csv_file:
+            return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/export_ec2_os_info")
+def generate_cost_recommendations(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Export EC2 Instances OS Info requested - {payload['environment_sub_domain'].replace('!', '')}")
+    arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name']]
+    if payload['environment_sub_domain'].startswith('!'):
+        arguments.append("true")
+    try:
+        file_name = export_ec2_os.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'

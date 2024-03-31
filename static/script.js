@@ -28,6 +28,9 @@ document.addEventListener("DOMContentLoaded", function () {
         "/generate_cost_recommendations": [
             ...defaultParameters
         ],
+        "/export_ec2_os_info": [
+            ...defaultParameters
+        ],
         "/generate_compliance_report": [
             ...defaultParameters,
             {
