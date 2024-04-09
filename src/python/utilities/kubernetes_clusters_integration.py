@@ -86,23 +86,27 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             print(f"{cluster_name} | Switching Kubernetes context command result: {switch_cmd_output}")
 
             # Check if 'lightlytics' namespace already exists
-            namespaces = subprocess.check_output(["kubectl", "get", "namespaces"])
-            if 'lightlytics' in str(namespaces):
-                print(color(f"{cluster_name} | Lightlytics namespace exists, deleting it", "yellow"))
-                subprocess.check_output(["kubectl", "delete", "namespace", "lightlytics"])
-                print(color(f"{cluster_name} | Lightlytics namespace deleted successfully", "green"))
+            try:
+                namespaces = subprocess.check_output(["kubectl", "get", "namespaces"])
+                if 'lightlytics' in str(namespaces):
+                    print(color(f"{cluster_name} | Lightlytics namespace exists, deleting it", "yellow"))
+                    subprocess.check_output(["kubectl", "delete", "namespace", "lightlytics"])
+                    print(color(f"{cluster_name} | Lightlytics namespace deleted successfully", "green"))
+            except Exception as e:
+                print(color(f"{cluster_name} | Failed running 'kubectl get namespaces', error: {e}", "red"))
+                continue
 
             # Setting up helm installation command
             integration_token = integration_metadata['collection_token']
             stream_url = f"{environment}.lightops.io" if stage else f"{environment}.streamsec.io"
             helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
-
             print(color(f"{cluster_name} | Executing helm commands", "blue"))
             try:
                 res = subprocess.check_output(helm_cmd.split(' '))
                 print(f"{cluster_name} | Installation command result: {res}")
             except Exception as e:
                 print(color(f"{cluster_name} | Something went wrong when running 'helm' commands, error: {e}", "red"))
+                continue
 
     print(color("Reverting back to original context", "blue"))
     subprocess.check_output(["kubectl", "config", "use-context", k8s_active_context])
