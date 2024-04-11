@@ -35,7 +35,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, skip_ready=Fals
                     continue
             print(color(f"{cluster_name} | {relevant_integration['collection_token']}", "green"))
         except IndexError:
-            integration_metadata = graph_client.create_kubernetes_integration(cluster['id'], cluster_name)
+            integration_metadata = graph_client.create_kubernetes_integration(cluster['id'], cluster['display_name'])
             if not integration_metadata:
                 print(color(f"{cluster_name} | Couldn't create the integration in Stream Security env - "
                             f"please contact support", "red"))
