@@ -91,6 +91,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             if not integrate_helm(cluster, stream_url, integration_metadata['collection_token']):
                 print(color(f"{cluster_name} | Helm installation failed!", "red"))
                 continue
+            continue
 
     print(color("Reverting back to original context", "blue"))
     subprocess.check_output(["kubectl", "config", "use-context", k8s_active_context])
