@@ -22,6 +22,9 @@ except ModuleNotFoundError:
 
 
 def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
+    # Setting the environment URL
+    stream_url = f"{environment}.lightops.io" if stage else f"{environment}.streamsec.io"
+
     print(color("Checking if prerequisites are installed", "blue"))
     for req in ['helm', 'kubectl']:
         try:
@@ -68,6 +71,10 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
             if relevant_integration['status'] == "READY":
                 print(color(f"{cluster_name} | Cluster is already integrated!", "green"))
                 continue
+            elif relevant_integration['status'] == "UNINITIALIZED":
+                print(color(f"{cluster_name} | Cluster is uninitialized, trying to reintegrate helm", "yellow"))
+                if not integrate_helm(cluster, stream_url, relevant_integration['collection_token']):
+                    print(color(f"{cluster_name} | Helm installation failed!", "red"))
             else:
                 print(color(f"{cluster_name} | Cluster has wrong status ({relevant_integration['status']}) - "
                             f"please remove it manually and run the script again", "yellow"))
@@ -81,38 +88,43 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
                 continue
             print(color(f"{cluster_name} | Integration created successfully in Stream Security!", "green"))
 
-            print(color(f"{cluster_name} | Switching Kubernetes context", "blue"))
-            switch_cmd_output = subprocess.check_output(["kubectl", "config", "use-context", cluster['id']])
-            print(f"{cluster_name} | Switching Kubernetes context command result: {switch_cmd_output}")
-
-            # Check if 'lightlytics' namespace already exists
-            try:
-                namespaces = subprocess.check_output(["kubectl", "get", "namespaces"])
-                if 'lightlytics' in str(namespaces):
-                    print(color(f"{cluster_name} | Lightlytics namespace exists, deleting it", "yellow"))
-                    subprocess.check_output(["kubectl", "delete", "namespace", "lightlytics"])
-                    print(color(f"{cluster_name} | Lightlytics namespace deleted successfully", "green"))
-            except Exception as e:
-                print(color(f"{cluster_name} | Failed running 'kubectl get namespaces', error: {e}", "red"))
-                continue
-
-            # Setting up helm installation command
-            integration_token = integration_metadata['collection_token']
-            stream_url = f"{environment}.lightops.io" if stage else f"{environment}.streamsec.io"
-            helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
-            print(color(f"{cluster_name} | Executing helm commands", "blue"))
-            try:
-                res = subprocess.check_output(helm_cmd.split(' '))
-                print(f"{cluster_name} | Installation command result: {res}")
-            except Exception as e:
-                print(color(f"{cluster_name} | Something went wrong when running 'helm' commands, error: {e}", "red"))
-                continue
+            if not integrate_helm(cluster, stream_url, integration_metadata['collection_token']):
+                print(color(f"{cluster_name} | Helm installation failed!", "red"))
 
     print(color("Reverting back to original context", "blue"))
     subprocess.check_output(["kubectl", "config", "use-context", k8s_active_context])
     print(color("Reverted successfully", "green"))
 
     print(color("Script finished", "green"))
+
+
+def integrate_helm(cluster, stream_url, integration_token):
+    cluster_name = cluster['display_name']
+    print(color(f"{cluster_name} | Switching Kubernetes context", "blue"))
+    switch_cmd_output = subprocess.check_output(["kubectl", "config", "use-context", cluster['id']])
+    print(f"{cluster_name} | Switching Kubernetes context command result: {switch_cmd_output}")
+
+    # Check if 'lightlytics' namespace already exists
+    try:
+        namespaces = subprocess.check_output(["kubectl", "get", "namespaces"])
+        if 'lightlytics' in str(namespaces):
+            print(color(f"{cluster_name} | Lightlytics namespace exists, deleting it", "yellow"))
+            subprocess.check_output(["kubectl", "delete", "namespace", "lightlytics"])
+            print(color(f"{cluster_name} | Lightlytics namespace deleted successfully", "green"))
+    except Exception as e:
+        print(color(f"{cluster_name} | Failed running 'kubectl get namespaces', error: {e}", "red"))
+        return False
+
+    # Setting up helm installation command
+    helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)
+    print(color(f"{cluster_name} | Executing helm commands", "blue"))
+    try:
+        res = subprocess.check_output(helm_cmd.split(' '))
+        print(f"{cluster_name} | Installation command result: {res}")
+    except Exception as e:
+        print(color(f"{cluster_name} | Something went wrong when running 'helm' commands, error: {e}", "red"))
+        return False
+    return True
 
 
 if __name__ == "__main__":
