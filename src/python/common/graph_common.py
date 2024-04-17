@@ -594,6 +594,20 @@ class GraphCommon(object):
         else:
             return res['data']['createKubernetes']
 
+    def delete_eks_integration(self, integration_id):
+        """
+        Delete EKS integration.
+        """
+        operation = "DeleteKubernetes"
+        query = "mutation DeleteKubernetes($id: ID!){deleteKubernetes(id: $id)}"
+        variables = {"id": integration_id}
+        res = self.graph_query(operation, variables, query)
+        if "errors" in res:
+            print(f"Failed to create integration - {res['errors'][0]['message']}")
+            return False
+        else:
+            return True
+
     # CVEs
     def get_cves(self, public_exposed=False, exploit_available=False, fix_available=False, cve_id=None, source=None,
                  packages=None, resource_id=None, resource_type=None, severity=None):
