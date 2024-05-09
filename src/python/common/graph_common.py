@@ -288,18 +288,46 @@ class GraphCommon(object):
         except IndexError:
             return 0
 
-    def get_resource_configuration_by_id(self, resource_id):
+    def get_resource_configuration_by_id(self, resource_id, raw=False, get_from_latest_timestamp=False):
         """ Get configuration details by resource's ID.
-            :param resource_id (str)    - Specific resource's ID.
-            :returns (dict)             - Configuration details.
+            :param resource_id (str)                - Specific resource's ID.
+            :param raw (bool)                       - Get Raw data instead of translated.
+            :param get_from_latest_timestamp (bool) - Get from latest timestamp instead of current (Enriched).
+            :returns (dict)                         - Configuration details.
         """
         operation = 'ResourceConfiguration'
         query = "query ResourceConfiguration($id: ID, $timestamp: Timestamp){" \
                 "configuration(resource_id: $id, timestamp: $timestamp){raw translated impact_paths __typename}}"
-        res = self.graph_query(operation, {"id": resource_id}, query)
+        variables = {"id": resource_id}
+
+        if get_from_latest_timestamp:
+            latest_timestamp = self.get_resource_configuration_latest_version_by_id(resource_id)
+            query = "query ResourceConfiguration($id: ID, $timestamp: Timestamp){" \
+                    "configuration(resource_id: $id, timestamp: $timestamp){raw translated impact_paths __typename}}"
+            variables["timestamp"] = latest_timestamp
+
+        res = self.graph_query(operation, variables, query)
         if 'errors' in res:
             raise Exception(f'Something went wrong, result: {res}')
+        if raw:
+            return res['data']['configuration']['raw']
         return res['data']['configuration']['translated']
+
+    def get_resource_configuration_latest_version_by_id(self, resource_id):
+        """ Get configuration details by resource's ID.
+            :param resource_id (str)                - Specific resource's ID.
+            :returns (dict)                         - Configuration latest version timestamp.
+        """
+        operation = 'ResourceConfigurationVersions'
+        query = "query ResourceConfigurationVersions($id: ID, $skip: Int, $limit: Int)" \
+                "{configuration_versions(resource_id: $id, skip: $skip, limit: $limit){timestamp provider __typename}}"
+        res = self.graph_query(operation, {"id": resource_id, "skip": 0, "limit": 1}, query)
+        if 'errors' in res:
+            raise Exception(f'Something went wrong, result: {res}')
+        try:
+            return res['data']['configuration_versions'][0]['timestamp']
+        except IndexError:
+            raise Exception("Can't find latest version of the configuration, fatal error")
 
     def get_resource_parents_by_id(self, resource_id):
         """ Get parent by resource's ID.
