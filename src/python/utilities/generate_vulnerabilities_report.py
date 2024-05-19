@@ -1,7 +1,6 @@
 import argparse
 import concurrent.futures
 import csv
-import logging
 import os
 import sys
 
@@ -11,6 +10,9 @@ SEVERITIES = {
     3: "High",
     4: "Critical"
 }
+
+RESOURCE_METADATA = {}
+RESOURCE_ANCESTORS = {}
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -32,7 +34,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     cve_data = [
         [
             "CVE ID", "Severity", "Score", "Packages Names", "Publicly Exposed", "Fix Available", "Has Exploit",
-            "Resource Name", "Resource Type", "Account ID"
+            "Resource Name", "Resource Type", "Account ID", "Deployment (if pod)"
         ]
     ]
     completed_threads = 0
@@ -57,14 +59,24 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
 def process_cve(graph_client, cve):
     try:
         cve_resources = graph_client.get_affected_resources(cve['cve_id'])
-        return [process_resource(cve, r) for r in cve_resources]
     except Exception as e:
         log.error(f"Something went wrong when getting resources from {cve['cve_id']} | Error: {e}")
         return []
+    try:
+        return [process_resource(graph_client, cve, r) for r in cve_resources]
+    except Exception as e:
+        log.error(f"Something went wrong when processing resources in {cve['cve_id']} | Error: {e}")
+        return []
 
 
-def process_resource(cve, resource):
-    return [
+def process_resource(graph_client, cve, resource):
+    resource_id = resource['resource_id']
+    if resource_id in RESOURCE_METADATA:
+        resource_metadata = RESOURCE_METADATA[resource_id]
+    else:
+        resource_metadata = graph_client.get_resource_metadata(resource['resource_id'])
+        RESOURCE_METADATA[resource_id] = resource_metadata
+    row = [
         cve['cve_id'],
         SEVERITIES[cve['severity']],
         cve['cvss_score'],
@@ -72,10 +84,25 @@ def process_resource(cve, resource):
         resource['public_exposed'],
         cve['fix_available'],
         cve['exploit_available'],
-        resource['resource_id'],
+        resource_metadata.get("display_name", resource['resource_id']),
         resource['resource_type'],
         resource['account_id']
     ]
+    if resource['resource_type'] == "pod":
+        if resource_id in RESOURCE_ANCESTORS:
+            ancestors = RESOURCE_ANCESTORS[resource_id]
+        else:
+            ancestors = graph_client.get_resource_ancestors(resource['resource_id'])
+            RESOURCE_ANCESTORS[resource_id] = ancestors
+        deployment = [a['id'] for a in ancestors if a['type'] == 'deployment']
+        if len(deployment) == 0:
+            log.warning(f"Can't find deployment for {resource_metadata.get('display_name', resource['resource_id'])}")
+            row.append('No deployment')
+        else:
+            row.append(graph_client.get_resource_metadata(deployment[0])['display_name'])
+    else:
+        row.append('Not a pod')
+    return row
 
 
 if __name__ == "__main__":
