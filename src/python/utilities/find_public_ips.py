@@ -1,4 +1,5 @@
 import argparse
+import concurrent.futures
 import os
 import sys
 
@@ -19,8 +20,9 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     # Connecting to Stream
     graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
-    # Find all ENIs
+    log.info("Getting all ENIs")
     enis = graph_client.get_resources_by_type("network_interface")
+    log.info(f"Found {len(enis)} ENIs")
 
     # Create IP Addresses list
     ip_addresses = []
@@ -29,19 +31,34 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     for ip_list in [ip['addresses'] for ip in enis]:
         ip_addresses.extend(ip_list)
 
-    # Add all Elastic IP addresses
+    log.info("Getting all Elastic IPs")
     ip_addresses.extend([eip['id'] for eip in graph_client.get_resources_by_type("elastic_ip")])
 
-    # Filter only external IDs
+    log.info("Filtering Internal IPs")
     external_ip_addresses = [ip for ip in list(set(ip_addresses)) if is_external_ip(ip)]
+    log.info(f"Found {len(external_ip_addresses)} IPs to process")
+
+    log.info("Processing single IPs")
     ext_dict = {}
-    for ext_ip in external_ip_addresses:
-        ext_dict[ext_ip] = [ip for ip in graph_client.general_resource_search(ext_ip, get_only_ids=True)
-                            if ip != ext_ip]
-        if len(ext_dict[ext_ip]) == 0:
-            ext_dict[ext_ip] = 'Elastic IP'
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_eni, ext_dict, ext_ip, graph_client) for ext_ip in external_ip_addresses]
+        log.info(f"Number of threads created: {len(futures)}")
+        completed_count = 0
+        for _ in concurrent.futures.as_completed(futures):
+            completed_count += 1
+            if completed_count % 50 == 0:
+                completed_percentage = int(completed_count / len(futures) * 100)
+                log.info(f"{completed_count} threads completed out of {len(futures)} ({completed_percentage}%)")
+        log.info("All threads completed")
 
     pprint(ext_dict)
+
+
+def process_eni(ext_dict, ext_ip, graph_client):
+    ext_dict[ext_ip] = [ip for ip in graph_client.general_resource_search(ext_ip, get_only_ids=True)
+                        if ip != ext_ip]
+    if len(ext_dict[ext_ip]) == 0:
+        ext_dict[ext_ip] = 'Elastic IP'
 
 
 def is_external_ip(ip):
