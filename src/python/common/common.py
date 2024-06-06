@@ -25,8 +25,9 @@ def get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, sta
     ll_graph_url = f"{ll_url}/graphql"
     try:
         graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, otp=ll_f2a)
-        ws_id = graph_client.get_ws_id_by_name(ws_name)
-        graph_client.change_client_ws(ws_id)
+        if ws_name:
+            ws_id = graph_client.get_ws_id_by_name(ws_name)
+            graph_client.change_client_ws(ws_id)
         log.info("Logged in successfully!")
         return graph_client
     except Exception as e:

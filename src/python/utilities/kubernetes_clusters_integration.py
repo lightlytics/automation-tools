@@ -141,7 +141,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--environment_f2a_token", help="F2A Token if set", default=None)
     parser.add_argument(
-        "--ws_name", help="The WS from which to fetch information", required=True)
+        "--ws_name", help="The WS from which to fetch information", default=None)
     parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
