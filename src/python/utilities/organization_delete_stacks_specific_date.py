@@ -62,23 +62,22 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
         )
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
-        for region in regions:
-            try:
-                cft_client = sub_account_session.client("cloudformation", region_name=region)
-                cft_stacks = cft_client.list_stacks()['StackSummaries']
-                stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
-                                 and 'ParentId' not in s
-                                 and s['StackStatus'] == 'CREATE_COMPLETE'
-                                 and s['CreationTime'].date() == datetime(2024, 3, 1).date()]
-                for s in stream_stacks:
-                    if just_print:
-                        print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
-                    else:
-                        print(f"Account: {sub_account[0]} | Deleting {s['StackName']}")
-                        cft_client.delete_stack(StackName=s['StackName'])
-            except Exception as e:
-                print(color(f"Account: {sub_account[0]} | Error found on region: {region}, error: {e}"))
-                continue
+        try:
+            cft_client = sub_account_session.client("cloudformation", region_name="us-east-1")
+            cft_stacks = cft_client.list_stacks()['StackSummaries']
+            stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
+                             and 'ParentId' not in s
+                             and s['StackStatus'] == 'CREATE_COMPLETE'
+                             and s['CreationTime'].date() == datetime(2024, 3, 1).date()]
+            for s in stream_stacks:
+                if just_print:
+                    print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
+                else:
+                    print(f"Account: {sub_account[0]} | Deleting {s['StackName']}")
+                    cft_client.delete_stack(StackName=s['StackName'])
+        except Exception as e:
+            print(color(f"Account: {sub_account[0]} | Error found on us-east-1, error: {e}"))
+            continue
 
 
 if __name__ == "__main__":
