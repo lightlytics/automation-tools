@@ -77,6 +77,7 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
                         print(f"Account: {sub_account[0]} | Deleting {s['StackName']}")
                         cft_client.delete_stack(StackName=s['StackName'])
             except Exception as e:
+                print(color(f"Account: {sub_account[0]} | Error found on region: {region}, error: {e}"))
                 continue
 
 
