@@ -64,7 +64,8 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
 
         try:
             cft_client = sub_account_session.client("cloudformation", region_name="us-east-1")
-            cft_stacks = cft_client.list_stacks()['StackSummaries']
+            cft_stacks = [stack for stack in cft_client.list_stacks()['StackSummaries']
+                          if "TemplateDescription" in stack]
             stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                              and 'ParentId' not in s
                              and s['StackStatus'] == 'CREATE_COMPLETE'
