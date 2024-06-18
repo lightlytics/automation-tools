@@ -64,12 +64,14 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
 
         try:
             cft_session_client = sub_account_session.client("cloudformation", region_name="us-east-1")
+            print(color(f"Account: {sub_account[0]} | Client loaded successfully!", "green"))
             cft_stacks = [stack for stack in cft_session_client.list_stacks()['StackSummaries']
                           if "TemplateDescription" in stack]
             stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                              and 'ParentId' not in s
                              and s['StackStatus'] == 'CREATE_COMPLETE'
-                             and s['CreationTime'].date() == datetime(2024, 3, 1).date()]
+                             and s['CreationTime'].date() == datetime(2024, 3, 1).date()
+                             or s['CreationTime'].date() == datetime(2024, 2, 22).date()]
             for s in stream_stacks:
                 if just_print:
                     print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
