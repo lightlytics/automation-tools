@@ -4,6 +4,7 @@ import os
 import sys
 
 from datetime import datetime
+from dateutil.tz import tzutc
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -64,9 +65,7 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
 
         try:
             cft_client = sub_account_session.client("cloudformation", region_name="us-east-1")
-            print("Trying to list the stacks")
             list_stacks = cft_client.list_stacks()
-            print("Filtering the stacks")
             cft_stacks = [stack for stack in list_stacks['StackSummaries'] if "TemplateDescription" in stack]
             stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                              and 'ParentId' not in s
