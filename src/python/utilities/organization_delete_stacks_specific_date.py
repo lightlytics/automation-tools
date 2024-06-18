@@ -63,10 +63,11 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
         try:
-            cft_session_client = sub_account_session.client("cloudformation", region_name="us-east-1")
-            print(color(f"Account: {sub_account[0]} | Client loaded successfully!", "green"))
-            cft_stacks = [stack for stack in cft_session_client.list_stacks()['StackSummaries']
-                          if "TemplateDescription" in stack]
+            cft_client = sub_account_session.client("cloudformation", region_name="us-east-1")
+            print("Trying to list the stacks")
+            list_stacks = cft_client.list_stacks()
+            print("Filtering the stacks")
+            cft_stacks = [stack for stack in list_stacks['StackSummaries'] if "TemplateDescription" in stack]
             stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                              and 'ParentId' not in s
                              and s['StackStatus'] == 'CREATE_COMPLETE'
@@ -77,7 +78,7 @@ def main(aws_profile_name, accounts, control_role="OrganizationAccountAccessRole
                     print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
                 else:
                     print(f"Account: {sub_account[0]} | Deleting {s['StackName']}")
-                    cft_session_client.delete_stack(StackName=s['StackName'])
+                    cft_client.delete_stack(StackName=s['StackName'])
         except Exception as e:
             print(color(f"Account: {sub_account[0]} | Error found on us-east-1, error: {e}"))
             continue
