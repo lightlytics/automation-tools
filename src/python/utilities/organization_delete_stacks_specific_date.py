@@ -84,8 +84,8 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
         stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                          and 'ParentId' not in s
                          and s['StackStatus'] == 'CREATE_COMPLETE'
-                         and s['CreationTime'].date() == datetime.date(2024, 3, 1)
-                         or s['CreationTime'].date() == datetime.date(2024, 2, 22)]
+                         and (s['CreationTime'].date() == datetime.date(2024, 3, 1)
+                         or s['CreationTime'].date() == datetime.date(2024, 2, 22))]
         for s in stream_stacks:
             if just_print:
                 print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
