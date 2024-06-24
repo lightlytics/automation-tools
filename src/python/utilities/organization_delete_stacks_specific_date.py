@@ -83,7 +83,7 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
         cft_stacks = [stack for stack in list_stacks['StackSummaries'] if "TemplateDescription" in stack]
         stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                          and 'ParentId' not in s
-                         and s['StackStatus'] == 'CREATE_COMPLETE'
+                         and (s['StackStatus'] == 'CREATE_COMPLETE' or s['StackStatus'] == 'DELETE_FAILED')
                          and (s['CreationTime'].date() == datetime.date(2024, 3, 1)
                          or s['CreationTime'].date() == datetime.date(2024, 2, 22))]
         for s in stream_stacks:
@@ -91,7 +91,7 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
                 print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
             else:
                 print(f"Account: {sub_account[0]} | Deleting {s['StackName']}")
-                cft_client.delete_stack(StackName=s['StackName'])
+                cft_client.delete_stack(StackName=s['StackName'], DeletionMode='FORCE_DELETE_STACK')
     except Exception as e:
         print(color(f"Account: {sub_account[0]} | Error found on us-east-1, error: {e}", "red"))
         return
