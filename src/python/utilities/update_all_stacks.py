@@ -1,3 +1,4 @@
+import argparse
 import botocore
 import boto3
 import concurrent.futures
@@ -5,11 +6,10 @@ import os
 import termcolor
 from botocore.exceptions import ClientError
 
-# Set the AWS_PROFILE environment variable, you aws configure profile name
-os.environ['AWS_PROFILE'] = 'orgroot'
 
-
-def main():
+def main(aws_profile_name, control_role="OrganizationAccountAccessRole"):
+    # Set the AWS_PROFILE environment variable
+    os.environ['AWS_PROFILE'] = aws_profile_name
     # Set up the Organizations client
     org_client = boto3.client('organizations')
     # Set up the STS client
@@ -35,7 +35,7 @@ def main():
         try:
             # Assume the role in the sub_account
             assumed_role = sts_client.assume_role(
-                RoleArn='arn:aws:iam::{}:role/OrganizationAccountAccessRole'.format(sub_account),
+                RoleArn=f'arn:aws:iam::{sub_account}:role/{control_role}',
                 RoleSessionName='MySessionName')
             # Create a Boto3 session using the assumed role credentials
             sub_account_session = boto3.Session(
@@ -124,4 +124,11 @@ def update_single_stack(cfn_client, stack, region):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="This script will integrate StreamSecurity environment with every account in the organization.")
+    parser.add_argument(
+        "--aws_profile_name", help="The AWS profile with admin permissions in organization account", default="default")
+    parser.add_argument(
+        "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole")
+    args = parser.parse_args()
+    main(args.aws_profile_name, control_role=args.control_role)
