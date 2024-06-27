@@ -81,7 +81,7 @@ def process_resource(graph_client, cve, resource):
         SEVERITIES[cve['severity']],
         cve['cvss_score'],
         cve['packages'],
-        resource['public_exposed'],
+        resource['internet_exposed'],
         cve['fix_available'],
         cve['exploit_available'],
         resource_metadata.get("display_name", resource['resource_id']),

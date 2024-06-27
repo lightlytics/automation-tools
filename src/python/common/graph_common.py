@@ -671,12 +671,11 @@ class GraphCommon(object):
         return self.graph_query(operation, variables, query)['data']['cves']['results']
 
     def get_affected_resources(self, cve_id):
-        operation = 'CVEResourcesQuery'
-        variables = {"filters": {"cve_ids": [f"{cve_id}"]}}
-        query = ("query CVEResourcesQuery($filters: VulnerableResourcesFilters, $skip: Int, $limit: Int){ "
-                 "cve_resources(filters: $filters, skip: $skip, limit: $limit){total_count results{ "
-                 "account_id resource_id resource_type public_exposed __typename} "
-                 "__typename}}")
+        operation = 'CVEResources'
+        variables = {"filters": {"cve_ids": [cve_id]}}
+        query = ("query CVEResources($filters: VulnerableResourcesFilters, $skip: Int, $limit: Int){"
+                 "cve_resources(filters: $filters, skip: $skip, limit: $limit){total_count results{account_id "
+                 "resource_id resource_type container_images detonated_mines internet_exposed __typename}__typename}}")
         return self.graph_query(operation, variables, query)['data']['cve_resources']['results']
 
     # Flow logs methods
