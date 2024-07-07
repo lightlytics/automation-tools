@@ -622,6 +622,60 @@ class GraphCommon(object):
         else:
             return res['data']['createKubernetes']
 
+    def get_kubernetes_cost(self, cluster_arn, from_ts, to_ts):
+        """
+        Get EKS cost.
+        """
+        operation = "CostCurrentTotalQuery"
+        query = "query CostCurrentTotalQuery($skip: Int, $limit: Int, $filters: CostK8sFilters, $anti_filters: " \
+                "CostK8sFilters, $sort: K8sCostSort, $groupBy: [K8sCostGroupBy], $groupByTagKey: String, " \
+                "$trend_period: CostTrendPeriod, $trend_range: TrendRange){cost_k8s(filters: $filters anti_filters: " \
+                "$anti_filters group_bys: $groupBy trend_period: $trend_period trend_range: $trend_range sort: " \
+                "$sort skip: $skip limit: $limit group_by_tag_key: $groupByTagKey){total_count results{timestamp " \
+                "total_cost trend_difference trend_percentage cpu_cost cpu_max_usage cpu_average_usage " \
+                "cpu_requested ram_cost ram_max_usage ram_average_usage ram_requested volume_cost traffic_cost " \
+                "efficiency predicted_cost cpu_charge_average memory_charge_average __typename}__typename}}"
+        variables = {
+            "filters": {
+                "cluster": cluster_arn,
+                "from_timestamp": from_ts,
+                "to_timestamp": to_ts
+            },
+            "groupBy": [],
+            "skip": 0,
+            "trend_period": "month"
+        }
+        res = self.graph_query(operation, variables, query)
+        if "errors" in res:
+            print(f"Failed to create integration - {res['errors'][0]['message']}")
+            return False
+        else:
+            return res['data']['cost_k8s']
+
+    def get_kubernetes_cluster_cost(self, cluster_arn, from_ts, to_ts):
+        """
+        Get EKS cluster cost.
+        """
+        operation = "CostKubernetesClustersQuery"
+        query = "query CostKubernetesClustersQuery($filters: CostK8sClusterFilters, $trend_period: CostTrendPeriod, " \
+                "$trend_range: TrendRange){cost_k8s_clusters(filters: $filters trend_period: $trend_period " \
+                "trend_range: $trend_range){total_cluster_cost total_cluster_idle_cost trend_percentage_cluster_cost " \
+                "trend_percentage_cluster_idle_cost __typename}}"
+        variables = {
+            "filters": {
+                "cluster": cluster_arn,
+                "from_timestamp": from_ts,
+                "to_timestamp": to_ts
+            },
+            "trend_period": "month"
+        }
+        res = self.graph_query(operation, variables, query)
+        if "errors" in res:
+            print(f"Failed to create integration - {res['errors'][0]['message']}")
+            return False
+        else:
+            return res['data']['cost_k8s_clusters']
+
     def delete_eks_integration(self, integration_id):
         """
         Delete EKS integration.
