@@ -23,12 +23,15 @@ except ModuleNotFoundError:
     from src.python.common.common import *
 
 
-def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
+def main(environment, ll_username, ll_password, ll_f2a, ws_name,
+         publicly_exposed=False, exploit_available=False, fix_available=False, cve_id=None, severity=None, stage=None):
     # Connecting to Stream
     graph_client = get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, stage)
 
     log.info("Getting all CVEs")
-    cve_list = graph_client.get_cves()
+    cve_list = graph_client.get_cves(
+        public_exposed=publicly_exposed, exploit_available=exploit_available, fix_available=fix_available,
+        cve_id=cve_id, severity=severity)
     log.info(f"Found {len(cve_list)} CVEs")
 
     cve_data = [
@@ -54,6 +57,8 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
                 completed_threads += 1
                 if completed_threads % 50 == 0:
                     log.info(f"{completed_threads} threads completed")
+
+    return filename
 
 
 def process_cve(graph_client, cve):
@@ -119,7 +124,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ws_name", help="The WS from which to fetch information", required=True)
     parser.add_argument(
+        "--publicly_exposed", help="Filter only publicly exposed resources effected", action="store_true")
+    parser.add_argument(
+        "--exploit_available", help="Filter only CVEs with an available exploit", action="store_true")
+    parser.add_argument(
+        "--fix_available", help="Filter only CVEs with an available fix", action="store_true")
+    parser.add_argument(
+        "--cve_id", help="Export only information from a specific CVE ID")
+    parser.add_argument(
+        "--severity", help="Export only information from a specific severity")
+    parser.add_argument(
         "--stage", action="store_true")
     args = parser.parse_args()
     main(args.environment_sub_domain, args.environment_user_name, args.environment_password, args.environment_f2a_token,
-         args.ws_name, stage=args.stage)
+         args.ws_name, publicly_exposed=args.publicly_exposed,
+         exploit_available=args.exploit_available, fix_available=args.fix_available,
+         cve_id=args.cve_id, severity=args.severity, stage=args.stage)

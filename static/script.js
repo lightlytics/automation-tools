@@ -22,7 +22,16 @@ document.addEventListener("DOMContentLoaded", function () {
             ...defaultParameters,
             { name: "start_timestamp", type: "date", required: true },
             { name: "end_timestamp", type: "date", required: true },
-            { name: "period", type: "text", placeholder: "day/month/year", required: true }
+            {
+                name: "period",
+                type: "select",
+                options: [
+                    { value: "day", label: "Day" },
+                    { value: "month", label: "Month" },
+                    { value: "year", label: "Year" }
+                ],
+                required: true
+            }
         ],
         "/generate_cost_recommendations": [
             ...defaultParameters
@@ -55,6 +64,24 @@ document.addEventListener("DOMContentLoaded", function () {
             ...defaultParameters,
             { name: "start_timestamp", type: "date", required: true },
             { name: "end_timestamp", type: "date", required: true }
+        ],
+        "/export_vulnerabilities": [
+            ...defaultParameters,
+            { name: "publicly_exposed", type: "boolean" },
+            { name: "exploit_available", type: "boolean" },
+            { name: "fix_available", type: "boolean" },
+            { name: "cve_id", type: "text", placeholder: "Get only info from a specific CVE ID" },
+            {
+                name: "severity",
+                type: "select",
+                options: [
+                    { value: "", label: "All" },
+                    { value: "low", label: "Low" },
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                    { value: "critical", label: "Critical" }
+                ]
+            }
         ]
     };
 
@@ -79,13 +106,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 defaultOption.textContent = parameter.placeholder;
                 selectElement.appendChild(defaultOption);
 
-                // Sort llResources by displayName
-                const sortedResources = llResources.slice().sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-                sortedResources.forEach(option => {
+                // Sort options if they are llResources, otherwise use the options directly
+                const options = parameter.options || [];
+                options.forEach(option => {
                     const optionElement = document.createElement("option");
                     optionElement.value = option.value;
-                    optionElement.textContent = option.displayName;
+                    optionElement.textContent = option.label;
                     selectElement.appendChild(optionElement);
                 });
 
@@ -94,6 +120,12 @@ document.addEventListener("DOMContentLoaded", function () {
                     <label for="${parameter.name}" class="form-label">${displayName}</label>
                 `;
                 inputGroup.appendChild(selectElement);
+            } else if (parameter.type === "boolean") {
+                const displayName = parameterDisplayNames[parameter.name] || parameter.name;
+                inputGroup.innerHTML = `
+                    <label for="${parameter.name}" class="form-label">${displayName}</label>
+                    <input type="checkbox" class="form-check-input" id="${parameter.name}" name="${parameter.name}">
+                `;
             } else {
                 const displayName = parameterDisplayNames[parameter.name] || parameter.name;
                 inputGroup.innerHTML = `
@@ -113,7 +145,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const payload = {};
         selectedParameters.forEach(parameter => {
-            const inputValue = document.getElementById(parameter.name).value;
+            let inputValue;
+            if (parameter.type === "boolean") {
+                inputValue = document.getElementById(parameter.name).checked;
+            } else {
+                inputValue = document.getElementById(parameter.name).value;
+            }
             payload[parameter.name] = inputValue;
         });
 
