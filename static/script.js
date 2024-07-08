@@ -50,6 +50,11 @@ document.addEventListener("DOMContentLoaded", function () {
             { name: "end_time", type: "date" },
             { name: "src_public", type: "text", placeholder: "If you want to filter only public source traffic, leave blank for all" },
             { name: "protocols", type: "text", placeholder: "TCP/UDP, leave blank for both" }
+        ],
+        "/export_eks_cost": [
+            ...defaultParameters,
+            { name: "start_timestamp", type: "date", required: true },
+            { name: "end_timestamp", type: "date", required: true }
         ]
     };
 

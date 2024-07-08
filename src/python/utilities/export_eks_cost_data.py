@@ -41,6 +41,8 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_timestamp
             row.update(data)
             writer.writerow(row)
 
+    return csv_file
+
 
 def get_clusters_cost(graph_client, eks_cost_dict, eks_cluster, start_timestamp, end_timestamp):
     cost_info = graph_client.get_kubernetes_cost(
