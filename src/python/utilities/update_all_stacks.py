@@ -7,7 +7,7 @@ import termcolor
 from botocore.exceptions import ClientError
 
 
-def main(aws_profile_name, control_role="OrganizationAccountAccessRole"):
+def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=None):
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = aws_profile_name
     # Set up the Organizations client
@@ -42,9 +42,12 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole"):
                 aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
                 aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
                 aws_session_token=assumed_role['Credentials']['SessionToken'])
-            # Get the list of all regions
-            regions = [region['RegionName'] for region in
-                       sub_account_session.client('ec2').describe_regions()['Regions']]
+            if region:
+                regions = [region]
+            else:
+                # Get the list of all regions
+                regions = [region['RegionName'] for region in
+                           sub_account_session.client('ec2').describe_regions()['Regions']]
             # set CloudFormation stack name prefix
             prefix = "-lightlytics-"
             # set CloudFormation prefix of nested stack to ignore it
@@ -55,9 +58,6 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole"):
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
                     update_stack, sub_account_session, region, prefix, n1prefix, n2prefix) for region in regions]
-
-            # Print a success message
-            print(termcolor.colored(f"Success for sub_account '{sub_account}'", "green"))
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
@@ -130,5 +130,7 @@ if __name__ == "__main__":
         "--aws_profile_name", help="The AWS profile with admin permissions in organization account", default="default")
     parser.add_argument(
         "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole")
+    parser.add_argument(
+        "--region", help="Select only a specific region to update")
     args = parser.parse_args()
-    main(args.aws_profile_name, control_role=args.control_role)
+    main(args.aws_profile_name, control_role=args.control_role, region=args.region)
