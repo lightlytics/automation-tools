@@ -57,14 +57,15 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, n1prefix, n2prefix) for region in regions]
+                    update_stack, sub_account_session, region, prefix, n1prefix, n2prefix, sub_account) for
+                    region in regions]
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix):
+def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix, sub_account):
     stacks = []
     cfn_client = ""
     try:
@@ -95,11 +96,12 @@ def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix):
               n1prefix not in stack['StackName'] and n2prefix not in stack['StackName']]
 
     if len(stacks) == 0:
-        print(termcolor.colored(f"The region '{region}' has no Lightlytics stacks", "blue"))
+        print(termcolor.colored(f"Account: {sub_account} | The region '{region}' has no Lightlytics stacks", "blue"))
         return False
     else:
         print(termcolor.colored(
-            f"Found Lightlytics Stacks in region '{region}': {[stack['StackName'] for stack in stacks]}", "blue"))
+            f"Account: {sub_account} | Found Lightlytics Stacks in region '{region}': "
+            f"{[stack['StackName'] for stack in stacks]}", "blue"))
 
     # Create a ThreadPoolExecutor to run the update_single_stack function concurrently
     with concurrent.futures.ThreadPoolExecutor() as executor:
