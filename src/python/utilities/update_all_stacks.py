@@ -52,14 +52,11 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
                            sub_account_session.client('ec2').describe_regions()['Regions']]
             # set CloudFormation stack name prefix
             prefix = "-lightlytics-"
-            # set CloudFormation prefix of nested stack to ignore it
-            n1prefix = "-LightlyticsCollectionLambdas-"
-            # set CloudFormation prefix of nested stack to ignore it
-            n2prefix = "-LightlyticsInitLambdas-"
+            prefix_2 = "LightlyticsStack-"
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, n1prefix, n2prefix, sub_account) for
+                    update_stack, sub_account_session, region, prefix, prefix_2, sub_account) for
                     region in regions]
 
         except botocore.exceptions.ClientError as e:
@@ -67,7 +64,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix, sub_account):
+def update_stack(sub_account_session, region, prefix, prefix_2, sub_account):
     stacks = []
     cfn_client = ""
     try:
@@ -80,9 +77,9 @@ def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix, sub_ac
 
     # Rolling back "UPDATE_ROLLBACK_FAILED" stacks
     rollback_stacks = [stack for stack in stacks if
-                       (prefix in stack['StackName'] and
+                       ((prefix in stack['StackName'] or prefix_2 in stack['StackName']) and
                         stack['StackStatus'] == 'UPDATE_ROLLBACK_FAILED') and
-                       n1prefix not in stack['StackName'] and n2prefix not in stack['StackName']]
+                       'ParentId' not in stack]
     for rb_stack in rollback_stacks:
         print(termcolor.colored(f"Rolling back the stack: '{rb_stack}'", "blue"))
         cfn_client.continue_update_rollback(StackName=rb_stack)
@@ -91,11 +88,11 @@ def update_stack(sub_account_session, region, prefix, n1prefix, n2prefix, sub_ac
     # Filter the list of stacks to only include a specific prefix
     # and status is complete create or update complete
     stacks = [stack for stack in stacks if
-              (prefix in stack['StackName'] and
+              ((prefix in stack['StackName'] or prefix_2 in stack['StackName']) and
                (stack['StackStatus'] == 'CREATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_ROLLBACK_COMPLETE')) and
-              n1prefix not in stack['StackName'] and n2prefix not in stack['StackName']]
+              'ParentId' not in stack]
 
     if len(stacks) == 0:
         print(termcolor.colored(f"Account: {sub_account} | The region '{region}' has no Lightlytics stacks", "blue"))
