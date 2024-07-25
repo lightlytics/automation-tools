@@ -25,7 +25,9 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
         # Iterate over the accounts in the page
         for account in page['Accounts']:
             # If the account is a sub_account and is not the one to be ignored, add its ID to the list
-            if account['Id'] != org_client.describe_organization()['Organization']['Id'] and account['Id']:
+            if (account['Id'] != org_client.describe_organization()['Organization']['Id']
+                    and account['Id']
+                    and account['Status'] == "ACTIVE"):
                 sub_accounts.append(account['Id'])
     print(termcolor.colored(f"Found {len(sub_accounts)} accounts", "green"))
 
