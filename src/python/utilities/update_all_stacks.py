@@ -7,7 +7,7 @@ import termcolor
 from botocore.exceptions import ClientError
 
 
-def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=None):
+def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=None, avoid_waiting=False):
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = aws_profile_name
     # Set up the Organizations client
@@ -56,7 +56,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, prefix_2, sub_account) for
+                    update_stack, sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting) for
                     region in regions]
 
         except botocore.exceptions.ClientError as e:
@@ -64,7 +64,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, prefix_2, sub_account):
+def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting):
     stacks = []
     cfn_client = ""
     try:
@@ -83,7 +83,8 @@ def update_stack(sub_account_session, region, prefix, prefix_2, sub_account):
     for rb_stack in rollback_stacks:
         print(termcolor.colored(f"Rolling back the stack: '{rb_stack}'", "blue"))
         cfn_client.continue_update_rollback(StackName=rb_stack)
-        cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
+        if not avoid_waiting:
+            cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
 
     # Filter the list of stacks to only include a specific prefix
     # and status is complete create or update complete
@@ -104,19 +105,20 @@ def update_stack(sub_account_session, region, prefix, prefix_2, sub_account):
 
     # Create a ThreadPoolExecutor to run the update_single_stack function concurrently
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(update_single_stack, cfn_client, stack, region) for stack in stacks]
+        futures = [executor.submit(update_single_stack, cfn_client, stack, region, avoid_waiting) for stack in stacks]
 
     # Wait for all threads to complete
     concurrent.futures.wait(futures)
 
 
-def update_single_stack(cfn_client, stack, region):
+def update_single_stack(cfn_client, stack, region, avoid_waiting):
     stack_name = stack['StackName']
     try:
         # Update the stack using the existing template
         cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
-        # Wait for the update to complete
-        cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+        if not avoid_waiting:
+            # Wait for the update to complete
+            cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
         # Print the name of the stack that was successfully updated
         print(termcolor.colored(f"Successfully updated stack {stack_name} in {region}", "green"))
     except ClientError as e:
@@ -133,5 +135,7 @@ if __name__ == "__main__":
         "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole")
     parser.add_argument(
         "--region", help="Select only a specific region to update")
+    parser.add_argument(
+        "--avoid_waiting", help="Don't wait for the stacks to update", action="store_true")
     args = parser.parse_args()
-    main(args.aws_profile_name, control_role=args.control_role, region=args.region)
+    main(args.aws_profile_name, control_role=args.control_role, region=args.region, avoid_waiting=args.avoid_waiting)
