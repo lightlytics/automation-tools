@@ -83,7 +83,9 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
         cft_stacks = [stack for stack in list_stacks['StackSummaries'] if "TemplateDescription" in stack]
         stream_stacks = [s for s in cft_stacks if 'lightlytics' in s['TemplateDescription'].lower()
                          and 'ParentId' not in s
-                         and (s['StackStatus'] == 'CREATE_COMPLETE' or s['StackStatus'] == 'DELETE_FAILED')
+                         and (s['StackStatus'] == 'CREATE_COMPLETE'
+                              or s['StackStatus'] == 'UPDATE_COMPLETE'
+                              or s['StackStatus'] == 'DELETE_FAILED')
                          and (s['CreationTime'].date() == datetime.date(2024, 3, 1)
                          or s['CreationTime'].date() == datetime.date(2024, 2, 22))]
         for s in stream_stacks:
