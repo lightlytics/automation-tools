@@ -87,7 +87,7 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
                               or s['StackStatus'] == 'UPDATE_COMPLETE'
                               or s['StackStatus'] == 'DELETE_FAILED')
                          and (s['CreationTime'].date() == datetime.date(2024, 3, 1)
-                         or s['CreationTime'].date() == datetime.date(2024, 2, 22))]
+                              or s['CreationTime'].date() == datetime.date(2024, 2, 22))]
         for s in stream_stacks:
             if just_print:
                 print(f"Account: {sub_account[0]} | Stack to be deleted: {s['StackName']}")
