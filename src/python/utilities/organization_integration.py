@@ -45,6 +45,9 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
     # Set up the STS client
     sts_client = boto3.client('sts')
 
+    # Set up org account variable
+    org_account_id = sts_client.get_caller_identity().get('Account')
+
     # Get all activated regions from Org account
     regions = [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
 
@@ -66,7 +69,7 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
             results = [executor.submit(
                 integrate_sub_account,
                 sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, parallel
+                control_role, org_account_id, parallel
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
@@ -74,28 +77,31 @@ def main(environment, ll_username, ll_password, aws_profile_name, accounts, para
         for sub_account in sub_accounts:
             integrate_sub_account(
                 sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role)
+                custom_tags, regions_to_integrate, control_role, org_account_id)
 
     print(color("Integration finished successfully!", "green"))
 
 
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
-        parallel=False):
+        org_account_id, parallel=False):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
-        # Assume the role in the sub_account[0]
-        assumed_role = sts_client.assume_role(
-            RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
-            RoleSessionName='MySessionName'
-        )
-        print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
-        sub_account_session = boto3.Session(
-            aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
-            aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
-            aws_session_token=assumed_role['Credentials']['SessionToken']
-        )
-        print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
+        if sub_account[0] == org_account_id:
+            sub_account_session = boto3.Session()
+        else:
+            # Assume the role in the sub_account[0]
+            assumed_role = sts_client.assume_role(
+                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
+                RoleSessionName='MySessionName'
+            )
+            print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
+            sub_account_session = boto3.Session(
+                aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+                aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+                aws_session_token=assumed_role['Credentials']['SessionToken']
+            )
+            print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
         print(color(f"Account: {sub_account[0]} | Checking if integration already exists", "blue"))
         ll_integrated = False
