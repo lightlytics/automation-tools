@@ -699,17 +699,19 @@ class GraphCommon(object):
         operation = 'CVEsMainQuery'
         variables = {
             'filters': {
-                "public_exposed": public_exposed,
+                "internet_exposed": public_exposed,
                 "exploit_available": exploit_available,
                 "fix_available": fix_available
             },
             'sort_by': 'cvss_score',
             'sort_order': -1
         }
-        query = "query CVEsMainQuery($filters: CVEFilters, $skip: Int, $limit: Int, $sort_by: CVESortField, " \
-                "$sort_order: Int) {cves(filters: $filters skip: $skip limit: $limit sort_by: $sort_by sort_order: " \
-                "$sort_order) {total_count results {cve_id cve_sources severity cvss_score packages exploit_available" \
-                " public_exposed affected_resources_count fix_available fixed_in_version __typename} __typename} }"
+        query = ("query CVEsMainQuery($filters: CVEFilters, $skip: Int, $limit: Int, $sort_by: CVESortField, "
+                 "$sort_order: Int){cves(filters: $filters skip: $skip limit: $limit sort_by: $sort_by "
+                 "sort_order: $sort_order){total_count results{attack_vector cve_id cve_sources severity cvss_score "
+                 "packages exploit_available internet_exposed affected_resources_count fix_available fixed_in_version "
+                 "epss_score cisa_kev{action date_added due_date __typename}published_date discovery_timestamp "
+                 "__typename}__typename}}")
         if cve_id:
             variables['filters']['cve_id'] = cve_id
         if source:
@@ -727,9 +729,10 @@ class GraphCommon(object):
     def get_affected_resources(self, cve_id):
         operation = 'CVEResources'
         variables = {"filters": {"cve_ids": [cve_id]}}
-        query = ("query CVEResources($filters: VulnerableResourcesFilters, $skip: Int, $limit: Int){"
-                 "cve_resources(filters: $filters, skip: $skip, limit: $limit){total_count results{account_id "
-                 "resource_id resource_type container_images detonated_mines internet_exposed __typename}__typename}}")
+        query = ("query CVEResources($filters: VulnerableResourcesFilters, $skip: Int, $limit: Int){cve_resources("
+                 "filters: $filters, skip: $skip, limit: $limit){total_count results{account_id resource_id "
+                 "resource_type container_images exposure_risk exposure_risk_description internet_exposed __typename"
+                 "}__typename}}")
         return self.graph_query(operation, variables, query)['data']['cve_resources']['results']
 
     # Flow logs methods
