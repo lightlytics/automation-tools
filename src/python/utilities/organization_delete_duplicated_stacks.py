@@ -99,13 +99,22 @@ def delete_stacks(sts_client, sub_account, control_role, region, just_print):
 
 def filter_duplicated_stacks(stream_stacks):
     filtered_stream_stacks = []
-    for lambda_name in ["InitLambda", "CloudWatchCollectionLamb",
-                        "IAMLogsCollectionLambda", "FlowLogsCollectionLambda"]:
+    for lambda_name in [
+        "InitLambda", "CloudWatchCollectionLamb", "IAMLogsCollectionLambda", "FlowLogsCollectionLambda",
+        "LightlyticsStack-collection-"
+    ]:
         # Handle Stacks
         stacks = [s for s in stream_stacks if lambda_name in s['StackName']]
         if stacks:
             stacks.remove(min(stacks, key=lambda x: x['CreationTime']))
         filtered_stream_stacks.extend(stacks)
+
+    # Handle init Stacks
+    stacks = [s for s in stream_stacks if ("LightlyticsStack" in s['StackName'] and "collection" not in s['StackName'])]
+    if stacks:
+        stacks.remove(min(stacks, key=lambda x: x['CreationTime']))
+    filtered_stream_stacks.extend(stacks)
+
     return filtered_stream_stacks
 
 
