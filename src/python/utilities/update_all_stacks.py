@@ -7,7 +7,11 @@ import termcolor
 from botocore.exceptions import ClientError
 
 
-def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=None, avoid_waiting=False):
+def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
+         region=None, avoid_waiting=False, custom_tags=None):
+    # Prepare tags if provided
+    if custom_tags:
+        custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags.split(",")]
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = aws_profile_name
     # Set up the Organizations client
@@ -56,15 +60,15 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole", region=
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting) for
-                    region in regions]
+                    update_stack, sub_account_session, region, prefix, prefix_2,
+                    sub_account, avoid_waiting, custom_tags) for region in regions]
 
         except botocore.exceptions.ClientError as e:
             # Print an error message
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting):
+def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting, custom_tags):
     stacks = []
     cfn_client = ""
     try:
@@ -105,17 +109,18 @@ def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avo
 
     # Create a ThreadPoolExecutor to run the update_single_stack function concurrently
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(update_single_stack, cfn_client, stack, region, avoid_waiting) for stack in stacks]
+        futures = [executor.submit(update_single_stack, cfn_client, stack,
+                                   region, avoid_waiting, custom_tags) for stack in stacks]
 
     # Wait for all threads to complete
     concurrent.futures.wait(futures)
 
 
-def update_single_stack(cfn_client, stack, region, avoid_waiting):
+def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
     stack_name = stack['StackName']
     try:
         # Update the stack using the existing template
-        cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
+        cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
         if not avoid_waiting:
             # Wait for the update to complete
             cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
@@ -137,5 +142,9 @@ if __name__ == "__main__":
         "--region", help="Select only a specific region to update")
     parser.add_argument(
         "--avoid_waiting", help="Don't wait for the stacks to update", action="store_true")
+    parser.add_argument(
+        "--custom_tags", help="Add custom tags to CFT Stacks and all resources, format: Name|Test,Env|Dev",
+        required=False)
     args = parser.parse_args()
-    main(args.aws_profile_name, control_role=args.control_role, region=args.region, avoid_waiting=args.avoid_waiting)
+    main(args.aws_profile_name, control_role=args.control_role,
+         region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags)
