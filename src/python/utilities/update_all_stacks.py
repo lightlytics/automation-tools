@@ -18,6 +18,8 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
     org_client = boto3.client('organizations')
     # Set up the STS client
     sts_client = boto3.client('sts')
+    # Set up org account variable
+    org_account_id = sts_client.get_caller_identity().get('Account')
     # Set up an empty list to store the sub_account IDs
     sub_accounts = []
     # Set up a paginator for the list_accounts operation
@@ -39,15 +41,18 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
     # assume_role call and the creation of the Boto3 session were successful
     for sub_account in sub_accounts:
         try:
-            # Assume the role in the sub_account
-            assumed_role = sts_client.assume_role(
-                RoleArn=f'arn:aws:iam::{sub_account}:role/{control_role}',
-                RoleSessionName='MySessionName')
-            # Create a Boto3 session using the assumed role credentials
-            sub_account_session = boto3.Session(
-                aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
-                aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
-                aws_session_token=assumed_role['Credentials']['SessionToken'])
+            if sub_account == org_account_id:
+                sub_account_session = boto3.Session()
+            else:
+                assumed_role = sts_client.assume_role(
+                    RoleArn=f'arn:aws:iam::{sub_account}:role/{control_role}',
+                    RoleSessionName='MySessionName'
+                )
+                sub_account_session = boto3.Session(
+                    aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+                    aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+                    aws_session_token=assumed_role['Credentials']['SessionToken']
+                )
             if region:
                 regions = [region]
             else:
