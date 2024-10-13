@@ -18,8 +18,12 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
     org_client = boto3.client('organizations')
     # Set up the STS client
     sts_client = boto3.client('sts')
-    # Set up org account variable
-    org_account_id = sts_client.get_caller_identity().get('Account')
+    try:
+        # Set up org account variable
+        org_account_id = sts_client.get_caller_identity().get('Account')
+    except Exception as e:
+        org_account_id = None
+        print(f"Could not get org account ID: {e}")
     # Set up an empty list to store the sub_account IDs
     sub_accounts = []
     # Set up a paginator for the list_accounts operation
