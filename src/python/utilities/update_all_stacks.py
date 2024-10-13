@@ -134,7 +134,10 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
     stack_name = stack['StackName']
     try:
         print(f"Updating stack: {stack_name}")
-        cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
+        if custom_tags:
+            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
+        else:
+            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
         if not avoid_waiting:
             # Wait for the update to complete
             cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)

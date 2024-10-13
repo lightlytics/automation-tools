@@ -21,7 +21,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
 
     # Get "Internet facing Load Balancer (NLB)" rule ID
     rules = graph_client.get_all_rules()
-    rule_id = [r['id'] for r in rules if r['name'] == "Delete EC2 instances stopped for over four weeks"][0]
+    rule_id = [r['id'] for r in rules if r['name'] == "Resource is public Internet facing"][0]
 
     # Get rule violations
     violations = [v for v in graph_client.export_csv_rule(rule_id)['violations']
@@ -48,9 +48,11 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
 
 
 def enrich_violations(graph_client, violation):
-    resource_details = graph_client.get_resource_configuration_by_id(
-        violation['resource_id'], get_from_latest_timestamp=True)
-    violation["WeeksSinceTransition"] = resource_details.get('WeeksSinceTransition', None)
+    resource_details = graph_client.get_resource_configuration_by_id(violation['resource_id'])
+    violation["private_ip_address"] = resource_details.get('PrivateIpAddress', None)
+    violation["private_dns_name"] = resource_details.get('PrivateDnsName', None)
+    violation["public_ip_address"] = resource_details.get('PublicIpAddress', None)
+    violation["public_dns_name"] = resource_details.get('PublicDnsName', None)
 
 
 if __name__ == "__main__":
