@@ -66,10 +66,11 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
             # set CloudFormation stack name prefix
             prefix = "-lightlytics-"
             prefix_2 = "LightlyticsStack-"
+            prefix_3 = "-streamsec-"
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, prefix_2,
+                    update_stack, sub_account_session, region, prefix, prefix_2, prefix_3,
                     sub_account, avoid_waiting, custom_tags) for region in regions]
 
         except botocore.exceptions.ClientError as e:
@@ -77,7 +78,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avoid_waiting, custom_tags):
+def update_stack(sub_account_session, region, prefix, prefix_2, prefix_3, sub_account, avoid_waiting, custom_tags):
     stacks = []
     cfn_client = ""
     try:
@@ -90,7 +91,9 @@ def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avo
 
     # Rolling back "UPDATE_ROLLBACK_FAILED" stacks
     rollback_stacks = [stack for stack in stacks if
-                       ((prefix in stack['StackName'] or prefix_2 in stack['StackName']) and
+                       ((prefix in stack['StackName'] or
+                         prefix_2 in stack['StackName'] or
+                         prefix_3 in stack['StackName']) and
                         stack['StackStatus'] == 'UPDATE_ROLLBACK_FAILED') and
                        'ParentId' not in stack]
     for rb_stack in rollback_stacks:
@@ -102,7 +105,9 @@ def update_stack(sub_account_session, region, prefix, prefix_2, sub_account, avo
     # Filter the list of stacks to only include a specific prefix
     # and status is complete create or update complete
     stacks = [stack for stack in stacks if
-              ((prefix in stack['StackName'] or prefix_2 in stack['StackName']) and
+              ((prefix in stack['StackName'] or
+                prefix_2 in stack['StackName'] or
+                prefix_3 in stack['StackName']) and
                (stack['StackStatus'] == 'CREATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_ROLLBACK_COMPLETE')) and
