@@ -133,7 +133,7 @@ def update_stack(sub_account_session, region, prefix, prefix_2, prefix_3, sub_ac
 def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
     stack_name = stack['StackName']
     try:
-        # Update the stack using the existing template
+        print(f"Updating stack: {stack_name}")
         cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
         if not avoid_waiting:
             # Wait for the update to complete
