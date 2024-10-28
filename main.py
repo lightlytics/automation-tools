@@ -20,6 +20,7 @@ from src.python.utilities import export_flow_logs as export_fl
 from src.python.utilities import export_ec2_os_info as export_ec2_os
 from src.python.utilities import export_eks_cost_data as export_k8s_cost
 from src.python.utilities import generate_vulnerabilities_report as export_vuln
+from src.python.utilities import export_inventory_count_by_account
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -141,6 +142,27 @@ def generate_export_inventory(payload: Dict[Any, Any], background_tasks: Backgro
         arguments.append("true")
     try:
         file_name = export_inventory.main(*arguments)
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="{file_name}"'
+        }
+        background_tasks.add_task(remove_file, file_name)
+        with open(file_name) as csv_file:
+            return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/export_inventory_count")
+def export_inventory_count(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
+    log.info(f"### Export inventory count requested - {payload['environment_sub_domain'].replace('!', '')}")
+    arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
+                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
+                 payload.get('accounts', None)]
+    if payload['environment_sub_domain'].startswith('!'):
+        arguments.append("true")
+    try:
+        file_name = export_inventory_count_by_account.main(*arguments)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'

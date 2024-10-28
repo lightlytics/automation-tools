@@ -236,6 +236,15 @@ class GraphCommon(object):
         else:
             return resources
 
+    def get_resources_by_account(self, account_id):
+        """ Get resources details by account.
+            :returns (dict/list)            - resources details.
+        """
+        operation = "InventorySummaryQuery"
+        query = ("query InventorySummaryQuery($account_id: [ID]){inventorySummary(account_id: $account_id){"
+                 "resource_type count}}")
+        return self.graph_query(operation, {"account_id": [account_id]}, query)['data']['inventorySummary']
+
     def get_resources_by_type(self, resource_type, get_only_ids=False):
         """ Get resources details by type.
             :param resource_type (str)      - Resource type.

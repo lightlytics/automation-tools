@@ -51,6 +51,10 @@ document.addEventListener("DOMContentLoaded", function () {
             { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" },
             { name: "tags", type: "text", placeholder: "Not mandatory, Tags to filter by, example: 'key=Name|value~=test,key=Vendor|value=Lightlytics'" }
         ],
+        "/export_inventory_count": [
+            ...defaultParameters,
+            { name: "accounts", type: "text", placeholder: "Not mandatory, filter by account separated by comma, e.g: '123123123123,321321321321'" }
+        ],
         "/export_flow_logs": [
             ...defaultParameters,
             { name: "action", type: "text", placeholder: "ACCEPT/REJECT, leave blank for both" },
