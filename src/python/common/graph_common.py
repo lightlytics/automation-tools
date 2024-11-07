@@ -609,7 +609,8 @@ class GraphCommon(object):
         :returns (list) - K8s integration list.
         """
         operation = "Kubernetes"
-        query = "query Kubernetes{kubernetes{_id type display_name creation_date status collection_token __typename}}"
+        query = ("query Kubernetes{kubernetes{"
+                 "_id type display_name creation_date status collection_token eks_arn __typename}}")
         res = self.graph_query(operation, {}, query)['data']['kubernetes']
         if get_only_names:
             return [ki['display_name'] for ki in res]

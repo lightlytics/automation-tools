@@ -8,8 +8,8 @@ from termcolor import colored as color
 INTEGRATION_COMMANDS = [
     "helm repo add lightlytics https://lightlytics.github.io/helm-charts",
     "helm repo update",
-    "helm install lightlytics --set lightlytics.apiToken={TOKEN} --set lightlytics.apiUrl={ENV} -n lightlytics "
-    "--create-namespace lightlytics/lightlytics"
+    "helm upgrade --install lightlytics --set lightlytics.apiToken={TOKEN} --set lightlytics.apiUrl={ENV} "
+    "-n lightlytics --create-namespace lightlytics/lightlytics"
 ]
 
 # Add the project root directory to the Python path
@@ -61,13 +61,14 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
     print(color(f"Found {len(eks_integrations)} integrations", "green"))
 
     for cluster in eks_clusters:
-        cluster_name = cluster['display_name']
-        if cluster['id'] not in k8s_contexts:
+        cluster_name = cluster['display_name'].split("/")[0]
+        cluster_arn = cluster['id']
+        if cluster_arn not in k8s_contexts:
             print(color(f"{cluster_name} | No context available for the cluster, skipping", "yellow"))
             continue
         print(color(f"{cluster_name} | Checking if cluster is already integrated", "blue"))
         try:
-            relevant_integration = [ri for ri in eks_integrations if ri['display_name'] == cluster_name][0]
+            relevant_integration = [ri for ri in eks_integrations if ri['eks_arn'] == cluster_arn][0]
             if relevant_integration['status'] == "READY":
                 print(color(f"{cluster_name} | Cluster is already integrated!", "green"))
                 continue
@@ -81,7 +82,7 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
                 continue
         except IndexError:
             print(color(f"{cluster_name} | Integration not found, creating it", "blue"))
-            integration_metadata = graph_client.create_kubernetes_integration(cluster['id'], cluster_name)
+            integration_metadata = graph_client.create_kubernetes_integration(cluster_arn, cluster_name)
             if not integration_metadata:
                 print(color(f"{cluster_name} | Couldn't create the integration in Stream Security env - "
                             f"please contact support", "red"))
@@ -101,21 +102,10 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, stage=None):
 
 
 def integrate_helm(cluster, stream_url, integration_token):
-    cluster_name = cluster['display_name']
+    cluster_name = cluster['display_name'].split("/")[0]
     print(color(f"{cluster_name} | Switching Kubernetes context", "blue"))
     switch_cmd_output = subprocess.check_output(["kubectl", "config", "use-context", cluster['id']])
     print(f"{cluster_name} | Switching Kubernetes context command result: {switch_cmd_output}")
-
-    # Check if 'lightlytics' namespace already exists
-    try:
-        namespaces = subprocess.check_output(["kubectl", "get", "namespaces"])
-        if 'lightlytics' in str(namespaces):
-            print(color(f"{cluster_name} | Lightlytics namespace exists, deleting it", "yellow"))
-            subprocess.check_output(["kubectl", "delete", "namespace", "lightlytics"])
-            print(color(f"{cluster_name} | Lightlytics namespace deleted successfully", "green"))
-    except Exception as e:
-        print(color(f"{cluster_name} | Failed running 'kubectl get namespaces', error: {e}", "red"))
-        return False
 
     # Setting up helm installation command
     helm_cmd = INTEGRATION_COMMANDS[2].replace("{TOKEN}", integration_token).replace("{ENV}", stream_url)

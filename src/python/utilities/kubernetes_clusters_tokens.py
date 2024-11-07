@@ -27,17 +27,16 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, skip_ready=Fals
     print(color(f"Found {len(eks_integrations)} integrations", "green"))
 
     for cluster in eks_clusters:
-        cluster_name = graph_client.get_resource_configuration_by_id(cluster['id'])['ClusterName'].split("/")[0]
+        cluster_name = cluster['display_name'].split("/")[0]
+        cluster_arn = cluster['id']
         try:
-            relevant_integration = [ri for ri in eks_integrations if
-                                    ri['display_name'].split("/")[0] == cluster_name][0]
+            relevant_integration = [ri for ri in eks_integrations if ri['eks_arn'] == cluster_arn][0]
             if skip_ready:
                 if relevant_integration['status'] == "READY":
                     continue
             print(color(f"{cluster_name} | {relevant_integration['collection_token']}", "green"))
         except IndexError:
-            integration_metadata = graph_client.create_kubernetes_integration(
-                cluster['id'], cluster['display_name'].split("/")[0])
+            integration_metadata = graph_client.create_kubernetes_integration(cluster_arn, cluster_name)
             if not integration_metadata:
                 print(color(f"{cluster_name} | Couldn't create the integration in Stream Security env - "
                             f"please contact support", "red"))
