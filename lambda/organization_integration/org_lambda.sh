@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check if the required parameters are provided
-if [ $# -lt 5 ]; then
+if [ $# -lt 4 ]; then
     echo "Usage: $0 {ENVIRONMENT} {ENVIRONMENT_USER_NAME} {ENVIRONMENT_PASSWORD} {WS_ID} {CUSTOM_TAGS}"
     echo "Example: $0 production admin_user my_password 12345 'tag1=value1,tag2=value2'"
     echo ""
