@@ -1,38 +1,23 @@
-import argparse
 import boto3
-import os
 import random
-import sys
-from urllib.parse import urlparse
+import os
+import concurrent.futures
+from src.python.common.boto_common import *
+from src.python.common.graph_common import GraphCommon
 
-# Add the project root directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-try:
-    from src.python.common.boto_common import *
-    from src.python.common.graph_common import GraphCommon
-except ModuleNotFoundError:
-    sys.path.append("../../..")
-    from src.python.common.boto_common import *
-    from src.python.common.graph_common import GraphCommon
+def lambda_handler(event, context):
+    # Extract parameters from environment variables
+    environment = os.environ.get('ENVIRONMENT')
+    domain = os.environ.get('ENVIRONMENT_DOMAIN', 'streamsec.io')
+    ll_username = os.environ.get('ENVIRONMENT_USER_NAME')
+    ll_password = os.environ.get('ENVIRONMENT_PASSWORD')
+    accounts = os.environ.get('ACCOUNTS', None)
+    parallel = int(os.environ.get('PARALLEL', 1))  # Convert to int, default to 1
+    ws_id = os.environ.get('WS_ID', None)
+    custom_tags = os.environ.get('CUSTOM_TAGS', None)
+    regions_to_integrate = os.environ.get('REGIONS', None)
+    control_role = os.environ.get('CONTROL_ROLE', "OrganizationAccountAccessRole")
 
-
-def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, parallel,
-         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole"):
-    
-    try:
-        # Check for required parameters
-        if not environment_url:
-            raise ValueError("The environment URL is required.")
-        if not ll_username:
-            raise ValueError("The StreamSecurity environment user name is required.")
-        if not ll_password:
-            raise ValueError("The StreamSecurity environment password is required.")
-        if not aws_profile_name:
-            raise ValueError("The AWS profile name is required.")
-    except Exception as e:
-        print(color(f"Error: {e}", "red"))
-        return
-    
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
@@ -46,57 +31,34 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     if regions_to_integrate:
         regions_to_integrate = regions_to_integrate.split(",")
 
-    print(color("Trying to login into Stream Security", "blue"))
-    try:
-        parsed_url = urlparse(environment_url)
-        if parsed_url.scheme and parsed_url.netloc:
-            ll_url = f"https://{parsed_url.netloc}/graphql"
-        elif '.' in environment_url:
-            ll_url = f"https://{environment_url}/graphql" if environment_url.count('.') >= 2 else f"https://{environment_url}.streamsec.io/graphql"
-        else:
-            raise ValueError("The environment should be a valid URL or a subdomain.")
-        print(color(f"Stream Security URL: {ll_url}", "blue"))
-        graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
-        print(color("Logged in successfully!", "green"))
-    except Exception as e:
-        print(color(f"Error: {e}", "red"))
-        return
+    print(f"Trying to login into Stream Security environment: {environment}")
+    ll_url = f"https://{environment}.{domain}/graphql"
+    graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+    print("Logged in successfully!")
+
+    print("Creating Boto3 Session")
     
-    try:
-        print(color("Creating Boto3 Session", "blue"))
-        # Set the AWS_PROFILE environment variable
-        os.environ['AWS_PROFILE'] = aws_profile_name
-        # Set up the Organizations client
-        org_client = boto3.client('organizations')
+    # Set up the Organizations and STS clients
+    org_client = boto3.client('organizations')
+    sts_client = boto3.client('sts')
 
-        # Set up the STS client
-        sts_client = boto3.client('sts')
+    # Set up org account variable
+    org_account_id = sts_client.get_caller_identity().get('Account')
 
-        # Set up org account variable
-        org_account_id = sts_client.get_caller_identity().get('Account')
+    # Get all activated regions from the Org account
+    regions = [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
 
-        # Get all activated regions from Org account
-        regions = [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
+    print("Fetching all accounts connected to the organization")
+    list_accounts = get_all_accounts(org_client)
 
-        print(color("Fetching all accounts connected to the organization", "blue"))
-        list_accounts = get_all_accounts(org_client)
-
-        # Getting only the account IDs of the active AWS accounts
-        sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
-        print(color(f"Found {len(sub_accounts)} accounts", "blue"))
-    except Exception as e: 
-        print(color(f"Error: {e}", "red"))
-        return
+    # Getting only the account IDs of the active AWS accounts
+    sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
+    print(f"Found {len(sub_accounts)} accounts")
 
     if accounts:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
 
-    print(color(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}", "blue"))
-       # Confirm with the user to continue
-    confirmation = input("Do you want to continue? Type 'yes' to proceed: ")
-    if confirmation.lower() != 'yes':
-        print("Operation canceled.")
-        return
+    print(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}")
 
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
@@ -114,8 +76,7 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
                 sub_account, sts_client, graph_client, regions, random_int,
                 custom_tags, regions_to_integrate, control_role, org_account_id)
 
-    print(color("Integration finished successfully!", "green"))
-
+    print("Integration finished successfully!")
 
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
@@ -262,36 +223,3 @@ def update_regions(graph_client, sub_account, active_regions, wait=True):
             return False
     print(color(f"Account: {sub_account[0]} | Editing regions finished successfully", "green"))
     return True
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='This script will integrate StreamSecurity environment with every account in the organization.')
-    parser.add_argument(
-        "--environment_url", help="The StreamSecurity environment URL", required=True)
-    parser.add_argument(
-        "--environment_user_name", help="The StreamSecurity environment user name", required=True)
-    parser.add_argument(
-        "--environment_password", help="The StreamSecurity environment password", required=True)
-    parser.add_argument(
-        "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
-        default="staging")
-    parser.add_argument(
-        "--accounts", help="Accounts list to iterate when creating the report (e.g '123123123123,321321321321')",
-        required=False)
-    parser.add_argument(
-        "--parallel", help="Number of threads for parallel integration", type=int, required=False)
-    parser.add_argument(
-        "--ws_id", help="ID of the WS to deploy to", required=False)
-    parser.add_argument(
-        "--custom_tags", help="Add custom tags to CFT Stacks and all resources, format: Name|Test,Env|Dev",
-        required=False)
-    parser.add_argument(
-        "--regions", help="Force select specific regions to integrate, separated by comma", required=False)
-    parser.add_argument(
-        "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole", required=False)
-    args = parser.parse_args()
-    main(args.environment_url, args.environment_user_name, args.environment_password,
-         args.aws_profile_name, args.accounts, args.parallel,
-         ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
-         control_role=args.control_role)
