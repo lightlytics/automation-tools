@@ -86,6 +86,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     { value: "critical", label: "Critical" }
                 ]
             }
+        ],
+        "/export_detections": [
+            ...defaultParameters
         ]
     };
 
