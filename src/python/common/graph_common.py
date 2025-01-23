@@ -784,51 +784,231 @@ class GraphCommon(object):
         variables = {"filters": {"acknowledged": True}}
         query = ("query Detections($filters: DetectionsFilters, $sort: DetectionsSort, $skip: Int, $limit: Int){"
                  "get_detections(filters: $filters, sort: $sort, skip: $skip, limit: $limit){total_count results{_id "
-                 "timestamp activity_type account_id anomaly_severity resource_id resource_type mitre_categories "
-                 "acknowledged acknowledgement_details{timestamp user reason __typename}signal_types "
-                 "detection_rule_activity_signals{detection_rule_activity_signal{rule_name __typename}__typename}"
+                 "timestamp activity_type source account_id anomaly_severity resource_id resource_type "
+                 "mitre_categories acknowledged acknowledgement_details{timestamp user reason __typename}signal_types "
                  "__typename}__typename}}")
         return self.graph_query(operation, variables, query)['data']['get_detections']['results']
 
     def get_detection_enrichment(self, detection_id):
         operation = 'Detection'
         variables = {"filters": {"_id": [detection_id]}}
-        query = ("query Detection($filters: DetectionsFilters){get_detections(filters: $filters){total_count "
-                 "results{_id timestamp activity_type account_id anomaly_severity cluster namespace resource_id "
-                 "resource_type resource_cluster resource_namespace resource_deployment mitre_categories acknowledged "
-                 "signal_types session_list{ip_address access_key user_agent country_code_iso mfa __typename}"
-                 "acknowledgement_details{timestamp user reason __typename}suspicious_identity_activity_signals{"
-                 "malicious_ip_signal{malicious_ip_records{...IpRecordFragment __typename}__typename}tor_ip_signal{"
-                 "tor_ip_records{...IpRecordFragment __typename}__typename}pentest_tool_signal{agents __typename}"
-                 "unusual_activity_time_signal{activity_time __typename}unusual_action_type_signal{"
-                 "resource_types_by_resources_actions{resource_type anomalous_actions{...AnomalousActionFragment "
-                 "__typename}__typename}__typename}anomalous_geo_location_signal{locations __typename}"
-                 "activity_in_unusual_aws_region_signal{unusual_activities_by_regions{location "
-                 "unusual_resource_types_actions{resource_type anomalous_actions{...AnomalousActionFragment "
-                 "__typename}__typename}__typename}__typename}root_user_activity_signal{_dummy __typename}__typename}"
-                 "anomalous_network_traffic_signals{malicious_ip_signal{malicious_ip_records{...IpRecordFragment "
-                 "__typename}__typename}anomalous_traffic_volume_signal{volume_size plot_coords{...CoordinatesFragment "
-                 "__typename}top_destination_ips{...IpRecordFragment __typename}__typename}"
-                 "anomalous_outbound_connection_signal{destination_ips{...IpRecordFragment __typename}__typename}"
-                 "possible_port_scan_signal{plot_coords{...CoordinatesFragment __typename}__typename}"
-                 "possible_internal_ip_scan_signal{plot_coords{...CoordinatesFragment __typename}__typename}"
-                 "anomalous_count_of_rejected_flows_signal{plot_coords{...CoordinatesFragment __typename}__typename}"
-                 "anomalous_data_store_connectivity_signal{resource_ids resource_types __typename}__typename}"
-                 "unusual_activity_signals{anomalous_count_of_get_objects_signal{plot_coords{...CoordinatesFragment "
-                 "__typename}__typename}__typename}cost_anomaly_signals{unusual_cost_spike_signal{service "
-                 "plot_coords{...CoordinatesFragment __typename}__typename}__typename}suspicious_kubernetes_signals{"
-                 "malicious_ip_signal{malicious_ip_records{...IpRecordFragment __typename}__typename}tor_ip_signal{"
-                 "tor_ip_records{...IpRecordFragment __typename}__typename}pentest_tool_signal{agents __typename}"
-                 "unusual_activity_time_signal{activity_time __typename}unusual_action_type_signal{"
-                 "resource_types_by_resources_actions{resource_type anomalous_actions{...AnomalousActionFragment "
-                 "__typename}__typename}__typename}anomalous_geo_location_signal{locations __typename}__typename}"
-                 "detection_rule_activity_signals{detection_rule_activity_signal{rule_id rule_name rule_type "
-                 "detection_field description window_start window_end condition{main_filter{operand filters{field "
-                 "value __typename}__typename}__typename}__typename}__typename}__typename}__typename}}fragment "
-                 "IpRecordFragment on IpRecord{ip_address severity hosts ports initiated_session vol_traffic "
-                 "__typename}fragment AnomalousActionFragment on AnomalousAction{action mitre_category resource_ids "
-                 "sub_resource regions destinations request_uri __typename}fragment CoordinatesFragment on Coordinates{"
-                 "x_coords y_coords __typename}")
+        query = """query Detection($filters: DetectionsFilters) {
+                      get_detections(filters: $filters) {
+                        total_count
+                        results {
+                          _id
+                          timestamp
+                          activity_type
+                          source
+                          account_id
+                          anomaly_severity
+                          cluster
+                          namespace
+                          resource_id
+                          resource_type
+                          resource_cluster
+                          resource_namespace
+                          resource_deployment
+                          mitre_categories
+                          acknowledged
+                          signal_types
+                          session_list {
+                            ip_address
+                            access_key
+                            user_agent
+                            country_code_iso
+                            mfa
+                            __typename
+                          }
+                          acknowledgement_details {
+                            timestamp
+                            user
+                            reason
+                            __typename
+                          }
+                          external_id
+                          external_url
+                          json_data
+                          signals {
+                            signal_type
+                            ... on MaliciousIpSignal {
+                              malicious_ip_records {
+                                ...IpRecordFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on TorIpSignal {
+                              tor_ip_records {
+                                ...IpRecordFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on PentestToolSignal {
+                              agents
+                              __typename
+                            }
+                            ... on UnusualActivityTimeSignal {
+                              activity_time
+                              __typename
+                            }
+                            ... on UnusualActionTypeSignal {
+                              resource_types_by_resources_actions {
+                                resource_type
+                                anomalous_actions {
+                                  ...AnomalousActionFragment
+                                  __typename
+                                }
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on AnomalousGeoLocationSignal {
+                              locations
+                              __typename
+                            }
+                            ... on ActivityInUnusualAwsRegionSignal {
+                              unusual_activities_by_regions {
+                                location
+                                unusual_resource_types_actions {
+                                  resource_type
+                                  anomalous_actions {
+                                    ...AnomalousActionFragment
+                                    __typename
+                                  }
+                                  __typename
+                                }
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on AnomalousTrafficVolumeSignal {
+                              volume_size
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              top_destination_ips {
+                                ...IpRecordFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on AnomalousOutboundConnectionSignal {
+                              destination_ips {
+                                ...IpRecordFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on PossiblePortScanSignal {
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on PossibleInternalIpScanSignal {
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on AnomalousCountOfRejectedFlowsSignal {
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on AnomalousDataStoreConnectivitySignal {
+                              resource_ids
+                              resource_types
+                              __typename
+                            }
+                            ... on AnomalousCountOfGetObjectsSignal {
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on UnusualCostSpikeSignal {
+                              service
+                              plot_coords {
+                                ...CoordinatesFragment
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on UnusualActivityTimeSignal {
+                              activity_time
+                              __typename
+                            }
+                            ... on DetectionRuleActivitySignal {
+                              rule_id
+                              rule_name
+                              description
+                              type
+                              window_start
+                              window_end
+                              plot_coords {
+                                x_coords
+                                y_coords
+                                __typename
+                              }
+                              custom_config {
+                                log_type
+                                detection_field
+                                __typename
+                              }
+                              identityml_config {
+                                match_type
+                                action
+                                __typename
+                              }
+                              __typename
+                            }
+                            ... on GenericThirdPartyActivitySignal {
+                              name
+                              description
+                              mitre_categories
+                              __typename
+                            }
+                            __typename
+                          }
+                          __typename
+                        }
+                        __typename
+                      }
+                    }
+                    fragment IpRecordFragment on IpRecord {
+                      ip_address
+                      severity
+                      hosts
+                      ports
+                      initiated_session
+                      vol_traffic
+                      __typename
+                    }
+                    fragment AnomalousActionFragment on AnomalousAction {
+                      action
+                      mitre_category
+                      resource_ids
+                      sub_resource
+                      regions
+                      destinations
+                      request_uri
+                      __typename
+                    }
+                    fragment CoordinatesFragment on Coordinates {
+                      x_coords
+                      y_coords
+                      __typename
+                    }
+"""
         return self.graph_query(operation, variables, query)['data']['get_detections']['results']
 
     # General methods
