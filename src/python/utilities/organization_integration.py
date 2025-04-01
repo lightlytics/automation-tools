@@ -17,7 +17,7 @@ except ModuleNotFoundError:
 
 
 def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, parallel,
-         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole"):
+         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole", response=False, response_region="us-east-1"):
     
     try:
         # Check for required parameters
@@ -104,7 +104,7 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
             results = [executor.submit(
                 integrate_sub_account,
                 sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, org_account_id, parallel
+                control_role, org_account_id, parallel, response, response_region
             ) for sub_account in sub_accounts]
             # Wait for all tasks to complete
             concurrent.futures.wait(results)
@@ -112,14 +112,14 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
         for sub_account in sub_accounts:
             integrate_sub_account(
                 sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role, org_account_id)
+                custom_tags, regions_to_integrate, control_role, org_account_id, response=response, response_region=response_region)
 
     print(color("Integration finished successfully!", "green"))
 
 
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
-        org_account_id, parallel=False):
+        org_account_id, parallel=False, response=False, response_region="us-east-1"):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         if sub_account[0] == org_account_id:
@@ -148,6 +148,15 @@ def integrate_sub_account(
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
             elif sub_account_information["status"] == "READY":
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
+                
+                response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
+                if response_info["remediation"]["status"] is None and response:
+                    graph_client.create_response_template(sub_account_information["cloud_account_id"])
+                    sub_account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
+                    deploy_response_stack(
+                        sub_account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
+                
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
@@ -214,6 +223,13 @@ def integrate_sub_account(
             print(color(f"Account: {sub_account[0]} | Getting active regions (Has EC2 instances)", "blue"))
             active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
+
+        if response:
+            graph_client.create_response_template(account_information["cloud_account_id"])
+            account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
+            deploy_response_stack(
+                account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
 
         # Updating the regions in StreamSecurity and waiting
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
@@ -290,8 +306,12 @@ if __name__ == "__main__":
         "--regions", help="Force select specific regions to integrate, separated by comma", required=False)
     parser.add_argument(
         "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole", required=False)
+    parser.add_argument(
+        "--response", help="Create response stack", action="store_true", required=False)
+    parser.add_argument(
+        "--response_region", help="Region for response stack", required=False, default="us-east-1")
     args = parser.parse_args()
     main(args.environment_url, args.environment_user_name, args.environment_password,
          args.aws_profile_name, args.accounts, args.parallel,
          ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
-         control_role=args.control_role)
+         control_role=args.control_role, response=args.response, response_region=args.response_region)

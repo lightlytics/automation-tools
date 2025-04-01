@@ -117,11 +117,20 @@ class GraphCommon(object):
         """
         operation = 'Accounts'
         query = "query Accounts{accounts{_id account_type cloud_account_id cloud_regions display_name " \
-                "external_id status template_url collection_template_url realtime_regions{region_name " \
+                "external_id status template_url collection_template_url remediation_template_url realtime_regions{region_name " \
                 "template_version __typename}vpc_flow_logs{flow_logs_token should_collect_flow_logs __typename} " \
                 "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
         return self.graph_query(operation, {}, query)['data']['accounts']
+
+    def get_account_response_config(self, cloud_account_id):
+        """ Get all accounts.
+            :returns (list) - Integrations in the environment.
+        """
+        operation = 'AccountAutoRemediationConfig'
+        payload_vars = {"cloud_account_id": cloud_account_id}
+        query = "query AccountAutoRemediationConfig($cloud_account_id: ID) {account(id: $cloud_account_id) {_id remediation { status template_version external_id role_arn stack_id }}}"
+        return self.graph_query(operation, payload_vars, query)['data']['account']
 
     def create_account(self, account_id, regions_list, display_name=None):
         """ Create account.
@@ -138,6 +147,23 @@ class GraphCommon(object):
         if display_name:
             payload_vars['account']["display_name"] = display_name
         query = "mutation CreateAccount($account: AccountInput){createAccount(account: $account){_id __typename}}"
+        res = self.graph_query(payload_operation, payload_vars, query)
+        if "errors" in res:
+            print("Something went wrong with creating an account / Account already exists")
+            print(res)
+            return False
+        else:
+            return True
+
+    def create_response_template(self, cloud_account_id):
+        """ Create response template.
+            :param account_id (str)     - Specific AWS account ID.
+            :returns (dict)             - Account details.
+        """
+        payload_operation = "GenerateAutoRemediationTemplate"
+        payload_vars = {"cloud_account_id": cloud_account_id}
+        query = "mutation GenerateAutoRemediationTemplate($cloud_account_id: ID!) {" \
+                    "remediation_generate_template(cloud_account_id: $cloud_account_id)}"
         res = self.graph_query(payload_operation, payload_vars, query)
         if "errors" in res:
             print("Something went wrong with creating an account / Account already exists")

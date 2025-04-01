@@ -118,6 +118,20 @@ def deploy_collection_stack(
         print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
         wait_for_cloudformation(sub_account, collection_stack_id, region_client)
 
+def deploy_response_stack(
+        account_information, sub_account_session, sub_account, region, random_int, custom_tags, wait=True):
+    print(color(f"Account: {sub_account[0]} | Adding response CFT stack for {region}", "blue"))
+    region_client = sub_account_session.client('cloudformation', region_name=region)
+    stack_creation_payload = create_stack_payload(
+        f"LightlyticsStack-response-{region}-{random_int}",
+        account_information["remediation_template_url"], custom_tags=custom_tags)
+    response_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
+    print(color(f"Account: {sub_account[0]} | response stack {response_stack_id} deploying", "blue"))
+    
+    if wait:
+        print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
+        wait_for_cloudformation(sub_account, response_stack_id, region_client)
+        print(color(f"Account: {sub_account[0]} | response stack deployed successfully", "green"))
 
 def deploy_init_stack(account_information, graph_client, sub_account, sub_account_session, random_int, wait=True,
                       custom_tags=None):
@@ -145,7 +159,7 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
                 f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
             return False
 
-    print(color(f"Account: {sub_account[0]} | Integrated successfully with Lightlytics", "green"))
+    print(color(f"Account: {sub_account[0]} | Integrated successfully with StreamSecurity", "green"))
     return True
 
 
