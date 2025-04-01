@@ -117,7 +117,7 @@ class GraphCommon(object):
         """
         operation = 'Accounts'
         query = "query Accounts{accounts{_id account_type cloud_account_id cloud_regions display_name " \
-                "external_id status template_url collection_template_url realtime_regions{region_name " \
+                "external_id status template_url collection_template_url remediation_template_url realtime_regions{region_name " \
                 "template_version __typename}vpc_flow_logs{flow_logs_token should_collect_flow_logs __typename} " \
                 "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"

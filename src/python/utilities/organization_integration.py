@@ -152,6 +152,8 @@ def integrate_sub_account(
                 response_info = account_information["remediation"]
                 if response_info is None and response:
                     graph_client.create_response_template(account_information["cloud_account_id"])
+                    account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
                     deploy_response_stack(
                         account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
                 
@@ -224,6 +226,8 @@ def integrate_sub_account(
 
         if response:
             graph_client.create_response_template(account_information["cloud_account_id"])
+            account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
             deploy_response_stack(
                 account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
 

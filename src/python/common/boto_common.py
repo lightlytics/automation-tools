@@ -159,7 +159,7 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
                 f"Account: {sub_account[0]} | Account is in the state of {account_status}, integration failed", "red"))
             return False
 
-    print(color(f"Account: {sub_account[0]} | Integrated successfully with Lightlytics", "green"))
+    print(color(f"Account: {sub_account[0]} | Integrated successfully with StreamSecurity", "green"))
     return True
 
 
