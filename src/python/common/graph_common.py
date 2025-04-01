@@ -123,6 +123,15 @@ class GraphCommon(object):
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
         return self.graph_query(operation, {}, query)['data']['accounts']
 
+    def get_account_response_config(self, cloud_account_id):
+        """ Get all accounts.
+            :returns (list) - Integrations in the environment.
+        """
+        operation = 'AccountAutoRemediationConfig'
+        payload_vars = {"cloud_account_id": cloud_account_id}
+        query = "query AccountAutoRemediationConfig($cloud_account_id: ID) {account(id: $cloud_account_id) {_id remediation { status template_version external_id role_arn stack_id }}}"
+        return self.graph_query(operation, payload_vars, query)['data']['account']
+
     def create_account(self, account_id, regions_list, display_name=None):
         """ Create account.
             :param account_id (str)     - Specific AWS account ID.

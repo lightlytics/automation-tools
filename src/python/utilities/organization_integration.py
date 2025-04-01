@@ -149,13 +149,13 @@ def integrate_sub_account(
             elif sub_account_information["status"] == "READY":
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 
-                response_info = account_information["remediation"]
-                if response_info is None and response:
-                    graph_client.create_response_template(account_information["cloud_account_id"])
-                    account_information = [acc for acc in graph_client.get_accounts()
+                response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
+                if response_info["remediation"]["status"] is None and response:
+                    graph_client.create_response_template(sub_account_information["cloud_account_id"])
+                    sub_account_information = [acc for acc in graph_client.get_accounts()
                                    if acc["cloud_account_id"] == sub_account[0]][0]
                     deploy_response_stack(
-                        account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
+                        sub_account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, wait=True)
                 
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
