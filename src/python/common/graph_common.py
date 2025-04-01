@@ -146,6 +146,23 @@ class GraphCommon(object):
         else:
             return True
 
+    def create_response_template(self, cloud_account_id):
+        """ Create response template.
+            :param account_id (str)     - Specific AWS account ID.
+            :returns (dict)             - Account details.
+        """
+        payload_operation = "GenerateAutoRemediationTemplate"
+        payload_vars = {"cloud_account_id": cloud_account_id}
+        query = "mutation GenerateAutoRemediationTemplate($cloud_account_id: ID!) {" \
+                    "remediation_generate_template(cloud_account_id: $cloud_account_id)}"
+        res = self.graph_query(payload_operation, payload_vars, query)
+        if "errors" in res:
+            print("Something went wrong with creating an account / Account already exists")
+            print(res)
+            return False
+        else:
+            return True
+
     def get_specific_account(self, account_id):
         """ Get specific account.
             :param account_id (str) - Specific AWS account ID.
