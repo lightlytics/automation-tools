@@ -301,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole", required=False)
     parser.add_argument(
-        "--response", help="Create response stack", type=bool, required=False, default=False)
+        "--response", help="Create response stack", action="store_true", required=False)
     parser.add_argument(
         "--response_region", help="Region for response stack", required=False, default="us-east-1")
     args = parser.parse_args()
