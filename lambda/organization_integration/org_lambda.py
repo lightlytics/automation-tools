@@ -9,6 +9,7 @@ parser.add_argument("--user-name", required=False, help="The username for the en
 parser.add_argument("--password", required=False, help="The password for the environment.")
 parser.add_argument("--cleanup", action="store_true", help="Clean up the resources created by the script.")
 parser.add_argument("--ws-id", required=False, help="The workspace ID.")
+parser.add_argument("--control-role", default="OrganizationAccountAccessRole", help="The control role name for assuming the role in the target account.", required=False)
 args = parser.parse_args()
 
 iam_client = boto3.client('iam')
@@ -128,7 +129,8 @@ def main():
                 "ENVIRONMENT_USER_NAME": args.user_name,
                 "ENVIRONMENT_PASSWORD": args.password,
                 "WS_ID": args.ws_id,
-                "PARALLEL": "8"
+                "PARALLEL": "8",
+                "CONTROL_ROLE": args.control_role
             }
         },
         Publish=True
