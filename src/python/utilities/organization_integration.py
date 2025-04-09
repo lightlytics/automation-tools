@@ -151,7 +151,7 @@ def integrate_sub_account(
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
-                if response_info["remediation"]["status"] is None and response:
+                if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:
                     graph_client.create_response_template(sub_account_information["cloud_account_id"])
                     sub_account_information = [acc for acc in graph_client.get_accounts()
                                    if acc["cloud_account_id"] == sub_account[0]][0]
