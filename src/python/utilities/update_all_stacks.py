@@ -8,10 +8,14 @@ from botocore.exceptions import ClientError
 
 
 def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
-         region=None, avoid_waiting=False, custom_tags=None):
+         region=None, avoid_waiting=False, custom_tags=None, include_collection_stacks=False, accounts=None):
     # Prepare tags if provided
     if custom_tags:
         custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags.split(",")]
+        
+    if accounts:
+        accounts = accounts.replace(" ", "").split(",")
+        
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = aws_profile_name
     # Set up the Organizations client
@@ -40,6 +44,11 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                     and account['Status'] == "ACTIVE"):
                 sub_accounts.append(account['Id'])
     print(termcolor.colored(f"Found {len(sub_accounts)} accounts", "green"))
+    
+    if accounts:
+        # Filter the sub_accounts list to include only the specified accounts
+        sub_accounts = accounts
+        print(termcolor.colored(f"Filtered to {accounts}", "green"))
 
     # Now you can use the sub_accounts list to iterate over the sub_accounts and print a success message if the
     # assume_role call and the creation of the Boto3 session were successful
@@ -64,13 +73,15 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                 regions = [region['RegionName'] for region in
                            sub_account_session.client('ec2').describe_regions()['Regions']]
             # set CloudFormation stack name prefix
-            prefix = "-lightlytics-"
-            prefix_2 = "LightlyticsStack-"
-            prefix_3 = "-streamsec-"
+            
+            include_filters = ["-streamsec-", "-lightlytics-", "LightlyticsStack-"]
+            exclude_filters = ["-collection-", "LightlyticsCollectionLambdas"]
+            if include_collection_stacks:
+                exclude_filters = []
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 [executor.submit(
-                    update_stack, sub_account_session, region, prefix, prefix_2, prefix_3,
+                    update_stack, sub_account_session, region, include_filters, exclude_filters,
                     sub_account, avoid_waiting, custom_tags) for region in regions]
 
         except botocore.exceptions.ClientError as e:
@@ -78,7 +89,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
             print(f"Error for sub_account {sub_account}: {e}")
 
 
-def update_stack(sub_account_session, region, prefix, prefix_2, prefix_3, sub_account, avoid_waiting, custom_tags):
+def update_stack(sub_account_session, region, include_filters, exclude_filters, sub_account, avoid_waiting, custom_tags):
     stacks = []
     cfn_client = ""
     try:
@@ -91,23 +102,21 @@ def update_stack(sub_account_session, region, prefix, prefix_2, prefix_3, sub_ac
 
     # Rolling back "UPDATE_ROLLBACK_FAILED" stacks
     rollback_stacks = [stack for stack in stacks if
-                       ((prefix in stack['StackName'] or
-                         prefix_2 in stack['StackName'] or
-                         prefix_3 in stack['StackName']) and
+                       ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
+                        not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
                         stack['StackStatus'] == 'UPDATE_ROLLBACK_FAILED') and
                        'ParentId' not in stack]
     for rb_stack in rollback_stacks:
         print(termcolor.colored(f"Rolling back the stack: '{rb_stack}'", "blue"))
-        cfn_client.continue_update_rollback(StackName=rb_stack)
-        if not avoid_waiting:
-            cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
+        # cfn_client.continue_update_rollback(StackName=rb_stack)
+        # if not avoid_waiting:
+            # cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
 
     # Filter the list of stacks to only include a specific prefix
     # and status is complete create or update complete
     stacks = [stack for stack in stacks if
-              ((prefix in stack['StackName'] or
-                prefix_2 in stack['StackName'] or
-                prefix_3 in stack['StackName']) and
+                       ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
+                        not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
                (stack['StackStatus'] == 'CREATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_COMPLETE' or
                 stack['StackStatus'] == 'UPDATE_ROLLBACK_COMPLETE')) and
@@ -134,13 +143,13 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
     stack_name = stack['StackName']
     try:
         print(f"Updating stack: {stack_name}")
-        if custom_tags:
-            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
-        else:
-            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
-        if not avoid_waiting:
-            # Wait for the update to complete
-            cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+        # if custom_tags:
+        #     cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
+        # else:
+        #     cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
+        # if not avoid_waiting:
+        #     # Wait for the update to complete
+        #     cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
         # Print the name of the stack that was successfully updated
         print(termcolor.colored(f"Successfully updated stack {stack_name} in {region}", "green"))
     except ClientError as e:
@@ -158,10 +167,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--region", help="Select only a specific region to update")
     parser.add_argument(
+        "--accounts", help="Select only specific accounts to update, format: 123456789012,123456789013", required=False)
+    parser.add_argument(
         "--avoid_waiting", help="Don't wait for the stacks to update", action="store_true")
+    parser.add_argument(
+        "--include_collection_stacks", help="Update also the collection stacks (use with caution as it might require resetting the lambda triggers and permissions)", action="store_true")
     parser.add_argument(
         "--custom_tags", help="Add custom tags to CFT Stacks and all resources, format: Name|Test,Env|Dev",
         required=False)
     args = parser.parse_args()
     main(args.aws_profile_name, control_role=args.control_role,
-         region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags)
+         region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags, include_collection_stacks=args.include_collection_stacks, accounts=args.accounts)
