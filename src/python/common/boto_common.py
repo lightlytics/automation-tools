@@ -2,7 +2,7 @@ import concurrent.futures
 import datetime
 import time
 from termcolor import colored as color
-
+import os
 
 def get_all_accounts(org_client):
     list_accounts = []
@@ -55,16 +55,20 @@ def wait_for_cloudformation(sub_account, cft_id, cf_client, timeout=240):
     return True
 
 
-def create_stack_payload(stack_name, sub_account_template_url, custom_tags=None):
+def create_stack_payload(stack_name, sub_account_template_url, custom_tags=None, params=None):
     stack_creation_payload = {
         "StackName": stack_name,
         "Capabilities": ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         "OnFailure": 'ROLLBACK',
         "EnableTerminationProtection": False,
-        "TemplateURL": sub_account_template_url
+        "TemplateURL": sub_account_template_url,
     }
     if custom_tags:
         stack_creation_payload['Tags'] = custom_tags
+        
+    if params:
+        stack_creation_payload['Parameters'] = params
+        
     return stack_creation_payload
 
 
@@ -119,12 +123,40 @@ def deploy_collection_stack(
         wait_for_cloudformation(sub_account, collection_stack_id, region_client)
 
 def deploy_response_stack(
-        account_information, sub_account_session, sub_account, region, random_int, custom_tags, wait=True):
+        environment_url, account_information, sub_account_session, sub_account, region, random_int, custom_tags, response_exclude_runbooks, wait=True):
     print(color(f"Account: {sub_account[0]} | Adding response CFT stack for {region}", "blue"))
     region_client = sub_account_session.client('cloudformation', region_name=region)
+    
+    params = [
+        {
+            "ParameterKey": "APIUrl",
+            "ParameterValue": environment_url
+        },
+        {
+            "ParameterKey": "APIToken",
+            "ParameterValue": account_information["lightlytics_collection_token"]
+        },
+        {
+            "ParameterKey": "ExternalId",
+            "ParameterValue": account_information["external_id"]
+        },
+        {
+            "ParameterKey": "TrustedAccountId",
+            "ParameterValue": os.environ.get("STREAM_ACCOUNT_ID", "624907860825")
+        }
+    ]
+    
+    if response_exclude_runbooks != "":
+        for runbook in response_exclude_runbooks.split(","):
+            params.append({
+                "ParameterKey": f"{runbook}Enabled",
+                "ParameterValue": "false"
+            })
+    
+    
     stack_creation_payload = create_stack_payload(
         f"LightlyticsStack-response-{region}-{random_int}",
-        account_information["remediation_template_url"], custom_tags=custom_tags)
+        os.environ.get("STREAM_RESPONSE_CFT_URL", f"https://prod-lightlytics-public-cloudformation.s3.amazonaws.com/stream-security-remediation-latest-{region}.yaml"), custom_tags=custom_tags , params=params)
     response_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
     print(color(f"Account: {sub_account[0]} | response stack {response_stack_id} deploying", "blue"))
     
