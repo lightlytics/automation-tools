@@ -6,9 +6,13 @@ termcolor~=1.1.0
 reportlab~=3.6.8
 openpyxl~=3.1.2
 uvicorn~=0.23.2
-fastapi~=0.110.0
-starlette~=0.37.2
+fastapi~=0.115.12
+starlette~=0.46.2
 Pillow~=10.2.0
 Jinja2~=3.1.2
 pandas~=2.1.0
 kubernetes~=29.0.0
+fastmcp==2.2.0
+mcp>=1.6.0
+pydantic==2.11.3
+python-dotenv==1.0.0
