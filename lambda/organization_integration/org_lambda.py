@@ -8,6 +8,7 @@ parser.add_argument("--environment", required=False, help="The environment name 
 parser.add_argument("--user-name", required=False, help="The username for the environment.")
 parser.add_argument("--password", required=False, help="The password for the environment.")
 parser.add_argument("--cleanup", action="store_true", help="Clean up the resources created by the script.")
+parser.add_argument("--accounts", required=False, help="manually specify accounts to integrate.")
 parser.add_argument("--ws-id", required=False, help="The workspace ID.")
 parser.add_argument("--control-role", default="OrganizationAccountAccessRole", help="The control role name for assuming the role in the target account.", required=False)
 parser.add_argument("--response", action="store_true", help="Enable creation of the response stack.")
@@ -134,7 +135,8 @@ def main():
                 "CONTROL_ROLE": args.control_role,
                 "RESPONSE": str(args.response).lower(),
                 "RESPONSE_REGION": args.response_region,
-                "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks
+                "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks,
+                "ACCOUNTS": args.accounts
             }
         },
         Publish=True
