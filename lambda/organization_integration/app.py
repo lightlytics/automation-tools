@@ -17,6 +17,9 @@ def lambda_handler(event, context):
     custom_tags = os.environ.get('CUSTOM_TAGS', None)
     regions_to_integrate = os.environ.get('REGIONS', None)
     control_role = os.environ.get('CONTROL_ROLE', "OrganizationAccountAccessRole")
+    response = os.environ.get('RESPONSE', 'false').lower() == 'true'
+    response_region = os.environ.get('RESPONSE_REGION', 'us-east-1')
+    response_exclude_runbooks = os.environ.get('RESPONSE_EXCLUDE_RUNBOOKS', '')
 
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
@@ -62,31 +65,31 @@ def lambda_handler(event, context):
 
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            # Submit tasks to the thread pool
             results = [executor.submit(
                 integrate_sub_account,
                 sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, org_account_id, parallel
+                control_role, org_account_id, parallel,
+                response, response_region, response_exclude_runbooks, environment, domain
             ) for sub_account in sub_accounts]
-            # Wait for all tasks to complete
             concurrent.futures.wait(results)
     else:
         for sub_account in sub_accounts:
             integrate_sub_account(
                 sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role, org_account_id)
+                custom_tags, regions_to_integrate, control_role, org_account_id,
+                response, response_region, response_exclude_runbooks, environment, domain
+            )
 
     print("Integration finished successfully!")
 
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
-        org_account_id, parallel=False):
+        org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", environment=None, domain=None):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         if sub_account[0] == org_account_id:
             sub_account_session = boto3.Session()
         else:
-            # Assume the role in the sub_account[0]
             assumed_role = sts_client.assume_role(
                 RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
                 RoleSessionName='MySessionName'
@@ -109,6 +112,15 @@ def integrate_sub_account(
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
             elif sub_account_information["status"] == "READY":
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
+                # Response stack logic for READY state
+                response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
+                if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:
+                    graph_client.create_response_template(sub_account_information["cloud_account_id"])
+                    sub_account_information = [acc for acc in graph_client.get_accounts()
+                                               if acc["cloud_account_id"] == sub_account[0]][0]
+                    deploy_response_stack(
+                        f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account,
+                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
@@ -176,13 +188,20 @@ def integrate_sub_account(
             active_regions = get_active_regions(sub_account_session, regions)
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
-        # Updating the regions in StreamSecurity and waiting
+        # Response stack logic for new integrations
+        if response:
+            graph_client.create_response_template(account_information["cloud_account_id"])
+            account_information = [acc for acc in graph_client.get_accounts()
+                                   if acc["cloud_account_id"] == sub_account[0]][0]
+            deploy_response_stack(
+                f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account,
+                response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
+
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
-        # Deploying collections stacks for all regions
         deploy_all_collection_stacks(
             active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags)
 
