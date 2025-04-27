@@ -117,12 +117,10 @@ def main():
     function_name = "streamsec-organization-lambda"
     lambda_client.create_function(
         FunctionName=function_name,
-        Runtime="python3.12",
         Role=role_arn,
-        Handler="app.lambda_handler",
+        PackageType='Image',
         Code={
-            "S3Bucket": "prod-lightlytics-artifacts-us-east-1",
-            "S3Key": "organization_script/lambda.zip"
+            'ImageUri': 'public.ecr.aws/stream-security/org-lambda:latest'
         },
         MemorySize=2048,
         Timeout=900,
