@@ -116,6 +116,19 @@ def main():
 
     # Create Lambda function
     function_name = "streamsec-organization-lambda"
+    env_vars = {
+        "ENVIRONMENT": args.environment,
+        "ENVIRONMENT_USER_NAME": args.user_name,
+        "ENVIRONMENT_PASSWORD": args.password,
+        "WS_ID": args.ws_id,
+        "PARALLEL": "8",
+        "CONTROL_ROLE": args.control_role,
+        "RESPONSE": str(args.response).lower(),
+        "RESPONSE_REGION": args.response_region,
+        "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks,
+    }
+    if args.accounts is not None:
+        env_vars["ACCOUNTS"] = args.accounts
     lambda_client.create_function(
         FunctionName=function_name,
         Role=role_arn,
@@ -125,20 +138,7 @@ def main():
         },
         MemorySize=2048,
         Timeout=900,
-        Environment={
-            "Variables": {
-                "ENVIRONMENT": args.environment,
-                "ENVIRONMENT_USER_NAME": args.user_name,
-                "ENVIRONMENT_PASSWORD": args.password,
-                "WS_ID": args.ws_id,
-                "PARALLEL": "8",
-                "CONTROL_ROLE": args.control_role,
-                "RESPONSE": str(args.response).lower(),
-                "RESPONSE_REGION": args.response_region,
-                "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks,
-                "ACCOUNTS": args.accounts
-            }
-        },
+        Environment={"Variables": env_vars},
         Publish=True
     )
 
