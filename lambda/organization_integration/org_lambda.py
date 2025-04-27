@@ -10,6 +10,9 @@ parser.add_argument("--password", required=False, help="The password for the env
 parser.add_argument("--cleanup", action="store_true", help="Clean up the resources created by the script.")
 parser.add_argument("--ws-id", required=False, help="The workspace ID.")
 parser.add_argument("--control-role", default="OrganizationAccountAccessRole", help="The control role name for assuming the role in the target account.", required=False)
+parser.add_argument("--response", action="store_true", help="Enable creation of the response stack.")
+parser.add_argument("--response-region", default="us-east-1", help="Region for response stack.")
+parser.add_argument("--response-exclude-runbooks", default="", help="Comma separated list of runbooks to exclude from response stack.")
 args = parser.parse_args()
 
 iam_client = boto3.client('iam')
@@ -130,7 +133,10 @@ def main():
                 "ENVIRONMENT_PASSWORD": args.password,
                 "WS_ID": args.ws_id,
                 "PARALLEL": "8",
-                "CONTROL_ROLE": args.control_role
+                "CONTROL_ROLE": args.control_role,
+                "RESPONSE": str(args.response).lower(),
+                "RESPONSE_REGION": args.response_region,
+                "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks
             }
         },
         Publish=True
