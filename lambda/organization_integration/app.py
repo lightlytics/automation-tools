@@ -120,7 +120,7 @@ def integrate_sub_account(
                                                if acc["cloud_account_id"] == sub_account[0]][0]
                     deploy_response_stack(
                         f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account,
-                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
+                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
@@ -195,7 +195,7 @@ def integrate_sub_account(
                                    if acc["cloud_account_id"] == sub_account[0]][0]
             deploy_response_stack(
                 f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account,
-                response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
+                response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
 
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
