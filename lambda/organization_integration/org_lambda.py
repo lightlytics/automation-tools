@@ -2,6 +2,10 @@ import argparse
 import boto3
 import json
 import time
+import zipfile
+import shutil
+import os
+import tempfile
 
 parser = argparse.ArgumentParser(description="Streamsec Organization Lambda Setup Script")
 parser.add_argument("--environment", required=False, help="The environment name in which the Lambda function will operate.")
@@ -13,7 +17,7 @@ parser.add_argument("--ws-id", required=False, help="The workspace ID.")
 parser.add_argument("--control-role", default="OrganizationAccountAccessRole", help="The control role name for assuming the role in the target account.", required=False)
 parser.add_argument("--response", action="store_true", help="Enable creation of the response stack.")
 parser.add_argument("--response-region", default="us-east-1", help="Region for response stack.")
-parser.add_argument("--response-exclude-runbooks", default="", help="Comma separated list of runbooks to exclude from response stack.")
+parser.add_argument("--response-exclude-runbooks", help="Comma separated list of runbooks to exclude from response stack.")
 args = parser.parse_args()
 
 iam_client = boto3.client('iam')
@@ -114,6 +118,23 @@ def main():
 
     time.sleep(5)  # Wait for role to propagate
 
+    # --- Create deployment package (zip) with dependencies ---
+    zip_filename = "lambda_deploy.zip"
+    with tempfile.TemporaryDirectory() as build_dir:
+        # Install dependencies into build_dir
+        os.system(f"pip install -r lambda/organization_integration/requirements.txt -t {build_dir}")
+        # Copy app.py into build_dir
+        shutil.copy("lambda/organization_integration/app.py", os.path.join(build_dir, "app.py"))
+        # Copy src into build_dir/src
+        shutil.copytree("src", os.path.join(build_dir, "src"))
+        # Zip everything in build_dir
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for foldername, subfolders, filenames in os.walk(build_dir):
+                for filename in filenames:
+                    filepath = os.path.join(foldername, filename)
+                    arcname = os.path.relpath(filepath, build_dir)
+                    zipf.write(filepath, arcname=arcname)
+
     # Create Lambda function
     function_name = "streamsec-organization-lambda"
     env_vars = {
@@ -124,23 +145,33 @@ def main():
         "PARALLEL": "8",
         "CONTROL_ROLE": args.control_role,
         "RESPONSE": str(args.response).lower(),
-        "RESPONSE_REGION": args.response_region,
-        "RESPONSE_EXCLUDE_RUNBOOKS": args.response_exclude_runbooks,
+        "RESPONSE_REGION": args.response_region
     }
     if args.accounts is not None:
         env_vars["ACCOUNTS"] = args.accounts
+        
+    if args.response_exclude_runbooks is not None:
+        env_vars["RESPONSE_EXCLUDE_RUNBOOKS"] = args.response_exclude_runbooks
+
+    with open(zip_filename, 'rb') as f:
+        zipped_code = f.read()
+
     lambda_client.create_function(
         FunctionName=function_name,
+        Runtime="python3.12",
         Role=role_arn,
-        PackageType='Image',
+        Handler="app.lambda_handler",
         Code={
-            'ImageUri': 'public.ecr.aws/stream-security/org-lambda:1.0.0'
+            'ZipFile': zipped_code
         },
         MemorySize=2048,
         Timeout=900,
         Environment={"Variables": env_vars},
         Publish=True
     )
+
+    # Clean up zip file
+    os.remove(zip_filename)
 
     # Create EventBridge rule
     rule_name = "streamsec-organization-newaccount-rule"
