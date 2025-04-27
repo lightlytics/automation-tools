@@ -120,7 +120,7 @@ def main():
         Role=role_arn,
         PackageType='Image',
         Code={
-            'ImageUri': 'public.ecr.aws/stream-security/org-lambda:latest'
+            'ImageUri': 'public.ecr.aws/stream-security/org-lambda:1.0.0'
         },
         MemorySize=2048,
         Timeout=900,
