@@ -45,6 +45,12 @@ def main():
         print("These arguments are required unless --cleanup is specified.")
         return
     
+    # verify the region is us-east-1
+    region = boto3.Session().region_name
+    if region != "us-east-1":
+        print("The region must be us-east-1.")
+        return
+    
     print("Welcome to the Streamsec Organization Lambda Setup Script!")
     print("This script will perform the following actions:")
     print("1. Create an IAM policy with permissions to list AWS accounts and describe EC2 regions.")
