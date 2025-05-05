@@ -108,9 +108,9 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
                        'ParentId' not in stack]
     for rb_stack in rollback_stacks:
         print(termcolor.colored(f"Rolling back the stack: '{rb_stack}'", "blue"))
-        # cfn_client.continue_update_rollback(StackName=rb_stack)
-        # if not avoid_waiting:
-            # cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
+        cfn_client.continue_update_rollback(StackName=rb_stack)
+        if not avoid_waiting:
+            cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack)
 
     # Filter the list of stacks to only include a specific prefix
     # and status is complete create or update complete
@@ -143,13 +143,13 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
     stack_name = stack['StackName']
     try:
         print(f"Updating stack: {stack_name}")
-        # if custom_tags:
-        #     cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
-        # else:
-        #     cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
-        # if not avoid_waiting:
-        #     # Wait for the update to complete
-        #     cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+        if custom_tags:
+            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True, Tags=custom_tags)
+        else:
+            cfn_client.update_stack(StackName=stack_name, UsePreviousTemplate=True)
+        if not avoid_waiting:
+            # Wait for the update to complete
+            cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
         # Print the name of the stack that was successfully updated
         print(termcolor.colored(f"Successfully updated stack {stack_name} in {region}", "green"))
     except ClientError as e:
