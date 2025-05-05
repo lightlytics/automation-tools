@@ -325,11 +325,12 @@ if __name__ == "__main__":
         "--response_exclude_runbooks", help="Comma separated list of runbooks to exclude from response stack",
         required=False, default="")
     parser.add_argument(
-        "--eks_audit_logs", help="Enable EKS audit logs", action="store_true", required=False),
+        "--eks_audit_logs", help="Enable EKS audit logs", action="store_true", required=False)
     parser.add_argument(
-        "--eks_audit_logs_regions", help="Regions for EKS audit logs, separated by comma", required=False),
+        "--eks_audit_logs_regions", help="Regions for EKS audit logs, separated by comma", required=False)
     args = parser.parse_args()
     main(args.environment_url, args.environment_user_name, args.environment_password,
          args.aws_profile_name, args.accounts, args.parallel,
          ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
-         control_role=args.control_role, response=args.response, response_region=args.response_region, response_exclude_runbooks=args.response_exclude_runbooks)
+         control_role=args.control_role, response=args.response, response_region=args.response_region, response_exclude_runbooks=args.response_exclude_runbooks,
+         eks_audit_logs=args.eks_audit_logs, eks_audit_logs_regions=args.eks_audit_logs_regions)

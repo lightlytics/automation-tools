@@ -181,6 +181,10 @@ def deploy_eks_audit_logs_stacks(
     if not eks_audit_logs_regions:
         eks_audit_logs_regions = get_active_eks_regions(sub_account_session, sub_account_information["cloud_regions"])
     
+    if not eks_audit_logs_regions:
+        print(color(f"Account: {sub_account[0]} | No active EKS regions found, skipping EKS audit logs for {sub_account[0]}", "blue"))
+        return
+    
     params = [
         {
             "ParameterKey": "APIUrl",
@@ -189,41 +193,34 @@ def deploy_eks_audit_logs_stacks(
         {
             "ParameterKey": "APICollectionToken",
             "ParameterValue": sub_account_information["lightlytics_collection_token"]
+        },
+        {
+            "ParameterKey": "EKSAuditCollectorPrefix",
+            "ParameterValue": environment_url.split("//")[1].split(".")[0]
         }
     ]
     
     for region in eks_audit_logs_regions:
-        # check if there is already a stack in the region
-        region_client = sub_account_session.client('cloudformation', region_name=region)
-        # list stacks with pagination
-        stacks = []
-        next_token = None
-        while True:
-            if next_token:
-                stacks_operation = region_client.list_stacks(NextToken=next_token)
-            else:
-                stacks_operation = region_client.list_stacks()
-            stacks.extend(stacks_operation['Stacks'])
-            if 'NextToken' in stacks_operation:
-                next_token = stacks_operation['NextToken']
-            else:
-                break
-        
-        # check if there is already a stack in the region that contains eks-audit-logs
-        if len([s for s in stacks if "eks-audit-logs" in s['StackName']]) > 0:
-            print(color(f"Account: {sub_account[0]} | EKS audit logs stack already exists in region {region}, skipping", "blue"))
+        # check if there is already a lambda function in the region
+        region_client = sub_account_session.client('lambda', region_name=region)
+        region_cloudformation_client = sub_account_session.client('cloudformation', region_name=region)
+        try:
+            region_client.get_function(FunctionName='StreamSec_EKSCloudWatchSubscriptionsFunction')
+            print(color(f"Account: {sub_account[0]} | EKS audit logs lambda already exists in region {region}, skipping", "blue"))
             continue
+        except region_client.exceptions.ResourceNotFoundException:
+            pass
         
         print(color(f"Account: {sub_account[0]} | Adding EKS audit logs CFT stack for {region}", "blue"))
         stack_creation_payload = create_stack_payload(
             f"StreamSecurity-eks-audit-logs-{region}-{random_int}",
             os.environ.get("STREAM_EKS_AUDIT_LOGS_CFT_URL", f"https://public-lightlytics-cft.s3.amazonaws.com/eks-audit-collector-latest.yaml"), custom_tags=custom_tags, params=params)
-        eks_audit_logs_stack_id = region_client.create_stack(**stack_creation_payload)["StackId"]
+        eks_audit_logs_stack_id = region_cloudformation_client.create_stack(**stack_creation_payload)["StackId"]
         print(color(f"Account: {sub_account[0]} | EKS audit logs stack {eks_audit_logs_stack_id} deploying", "blue"))
         
         if wait:
             print(color(f"Account: {sub_account[0]} | Waiting for the stack to finish deploying successfully", "blue"))
-            wait_for_cloudformation(sub_account, eks_audit_logs_stack_id, region_client)
+            wait_for_cloudformation(sub_account, eks_audit_logs_stack_id, region_cloudformation_client)
             print(color(f"Account: {sub_account[0]} | EKS audit logs stack deployed successfully", "green"))
         else:
             print(color(f"Account: {sub_account[0]} | EKS audit logs stack deployed successfully", "green"))
