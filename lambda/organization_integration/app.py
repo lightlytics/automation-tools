@@ -20,6 +20,10 @@ def lambda_handler(event, context):
     response = os.environ.get('RESPONSE', 'false').lower() == 'true'
     response_region = os.environ.get('RESPONSE_REGION', 'us-east-1')
     response_exclude_runbooks = os.environ.get('RESPONSE_EXCLUDE_RUNBOOKS', '')
+    eks_audit_logs = os.environ.get('EKS_AUDIT_LOGS', 'false').lower() == 'true'
+    eks_audit_logs_regions = os.environ.get('EKS_AUDIT_LOGS_REGIONS', None)
+    if eks_audit_logs_regions:
+        eks_audit_logs_regions = eks_audit_logs_regions.split(",")
 
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
@@ -69,7 +73,8 @@ def lambda_handler(event, context):
                 integrate_sub_account,
                 sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
                 control_role, org_account_id, parallel,
-                response, response_region, response_exclude_runbooks, environment, domain
+                response, response_region, response_exclude_runbooks, environment, domain,
+                eks_audit_logs, eks_audit_logs_regions
             ) for sub_account in sub_accounts]
             concurrent.futures.wait(results)
     else:
@@ -77,14 +82,16 @@ def lambda_handler(event, context):
             integrate_sub_account(
                 sub_account, sts_client, graph_client, regions, random_int,
                 custom_tags, regions_to_integrate, control_role, org_account_id,
-                response, response_region, response_exclude_runbooks, environment, domain
+                response, response_region, response_exclude_runbooks, environment, domain,
+                eks_audit_logs, eks_audit_logs_regions
             )
 
     print("Integration finished successfully!")
 
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
-        org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", environment=None, domain=None):
+        org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", environment=None, domain=None,
+        eks_audit_logs=False, eks_audit_logs_regions=None):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
     try:
         if sub_account[0] == org_account_id:
@@ -115,12 +122,13 @@ def integrate_sub_account(
                 # Response stack logic for READY state
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
                 if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:
-                    graph_client.create_response_template(sub_account_information["cloud_account_id"])
-                    sub_account_information = [acc for acc in graph_client.get_accounts()
-                                               if acc["cloud_account_id"] == sub_account[0]][0]
                     deploy_response_stack(
                         f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account,
-                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
+                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
+                # Deploying EKS audit logs if enabled
+                if eks_audit_logs:
+                    deploy_eks_audit_logs_stacks(
+                        f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
@@ -190,12 +198,14 @@ def integrate_sub_account(
 
         # Response stack logic for new integrations
         if response:
-            graph_client.create_response_template(account_information["cloud_account_id"])
-            account_information = [acc for acc in graph_client.get_accounts()
-                                   if acc["cloud_account_id"] == sub_account[0]][0]
             deploy_response_stack(
                 f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account,
-                response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
+                response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
+
+        # Deploying EKS audit logs if enabled
+        if eks_audit_logs:
+            deploy_eks_audit_logs_stacks(
+                f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
 
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"

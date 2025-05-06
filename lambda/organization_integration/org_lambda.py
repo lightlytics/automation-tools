@@ -18,6 +18,8 @@ parser.add_argument("--control-role", default="OrganizationAccountAccessRole", h
 parser.add_argument("--response", action="store_true", help="Enable creation of the response stack.")
 parser.add_argument("--response-region", default="us-east-1", help="Region for response stack.")
 parser.add_argument("--response-exclude-runbooks", help="Comma separated list of runbooks to exclude from response stack.")
+parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creation of the EKS audit logs.")
+parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
 args = parser.parse_args()
 
 iam_client = boto3.client('iam')
@@ -41,6 +43,12 @@ def main():
     if missing_args:
         print(f"Missing required arguments: {', '.join(missing_args)}")
         print("These arguments are required unless --cleanup is specified.")
+        return
+    
+    # verify the region is us-east-1
+    region = boto3.Session().region_name
+    if region != "us-east-1":
+        print("The region must be us-east-1.")
         return
     
     print("Welcome to the Streamsec Organization Lambda Setup Script!")
@@ -145,13 +153,17 @@ def main():
         "PARALLEL": "8",
         "CONTROL_ROLE": args.control_role,
         "RESPONSE": str(args.response).lower(),
-        "RESPONSE_REGION": args.response_region
+        "RESPONSE_REGION": args.response_region,
+        "EKS_AUDIT_LOGS": str(args.eks_audit_logs).lower(),
     }
     if args.accounts is not None:
         env_vars["ACCOUNTS"] = args.accounts
         
     if args.response_exclude_runbooks is not None:
         env_vars["RESPONSE_EXCLUDE_RUNBOOKS"] = args.response_exclude_runbooks
+
+    if args.eks_audit_logs_regions is not None:
+        env_vars["EKS_AUDIT_LOGS_REGIONS"] = args.eks_audit_logs_regions
 
     with open(zip_filename, 'rb') as f:
         zipped_code = f.read()
