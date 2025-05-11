@@ -127,7 +127,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                     log_with_color(f"Failed to get regions for account {sub_account}: {str(e)}", "red", "error")
                     continue
 
-            include_filters = ["-streamsec-", "-lightlytics-", "LightlyticsStack-"]
+            include_filters = ["-streamsec-", "-lightlytics-", "LightlyticsStack-", "LightlyticsCostModule"]
             exclude_filters = ["-collection-", "LightlyticsCollectionLambdas"]
             if include_collection_stacks:
                 exclude_filters = []
