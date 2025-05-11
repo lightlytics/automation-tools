@@ -13,40 +13,40 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
     if custom_tags:
         custom_tags = [{'Key': k.split("|")[0], 'Value': k.split("|")[1]} for k in custom_tags.split(",")]
         
-    if accounts:
-        accounts = accounts.replace(" ", "").split(",")
-        
     # Set the AWS_PROFILE environment variable
     os.environ['AWS_PROFILE'] = aws_profile_name
-    # Set up the Organizations client
-    org_client = boto3.client('organizations')
-    # Set up the STS client
-    sts_client = boto3.client('sts')
-    try:
-        # Set up org account variable
-        org_account_id = sts_client.get_caller_identity().get('Account')
-    except Exception as e:
-        org_account_id = None
-        print(f"Could not get org account ID: {e}")
-    # Set up an empty list to store the sub_account IDs
-    sub_accounts = []
-    # Set up a paginator for the list_accounts operation
-    paginator = org_client.get_paginator('list_accounts')
-
-    # Iterate over the pages of results
-    print(termcolor.colored(f"Getting all accounts", "blue"))
-    for page in paginator.paginate():
-        # Iterate over the accounts in the page
-        for account in page['Accounts']:
-            # If the account is a sub_account and is not the one to be ignored, add its ID to the list
-            if (account['Id'] != org_client.describe_organization()['Organization']['Id']
-                    and account['Id']
-                    and account['Status'] == "ACTIVE"):
-                sub_accounts.append(account['Id'])
-    print(termcolor.colored(f"Found {len(sub_accounts)} accounts", "green"))
     
-    if accounts:
-        # Filter the sub_accounts list to include only the specified accounts
+    sts_client = boto3.client('sts')
+    
+    if not accounts:
+        # Set up the Organizations client
+        org_client = boto3.client('organizations')
+        # Set up the STS client
+        try:
+            # Set up org account variable
+            org_account_id = sts_client.get_caller_identity().get('Account')
+        except Exception as e:
+            org_account_id = None
+            print(f"Could not get org account ID: {e}")
+        # Set up an empty list to store the sub_account IDs
+        sub_accounts = []
+        # Set up a paginator for the list_accounts operation
+        paginator = org_client.get_paginator('list_accounts')
+
+        # Iterate over the pages of results
+        print(termcolor.colored(f"Getting all accounts", "blue"))
+        for page in paginator.paginate():
+            # Iterate over the accounts in the page
+            for account in page['Accounts']:
+                # If the account is a sub_account and is not the one to be ignored, add its ID to the list
+                if (account['Id'] != org_client.describe_organization()['Organization']['Id']
+                        and account['Id']
+                        and account['Status'] == "ACTIVE"):
+                    sub_accounts.append(account['Id'])
+        print(termcolor.colored(f"Found {len(sub_accounts)} accounts", "green"))
+    
+    else:
+        accounts = accounts.replace(" ", "").split(",")
         sub_accounts = accounts
         print(termcolor.colored(f"Filtered to {accounts}", "green"))
 
