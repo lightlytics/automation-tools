@@ -101,8 +101,8 @@ def modify_lambda_url(aws_account, environment_url, old_url, control_role, sts_c
         for page in paginator.paginate():
             functions.extend(page['Functions'])
         # keep only the functions that have stream/lightlytics/streamsec/streamsecurity in the name
-        functions = [function for function in functions if 'stream' in function['FunctionName'].lower() or 'lightlytics' in function['FunctionName'].lower() or 'streamsec' in function['FunctionName'].lower() or 'streamsecurity' in function['FunctionName'].lower()]
-        for function in functions:
+        keywords = ('stream', 'lightlytics', 'streamsec', 'streamsecurity')
+        functions = [f for f in functions if any(k in f['FunctionName'].lower() for k in keywords)]
             print(color(f"Checking function: {function['FunctionName']}", "blue"))
             # if the value is not the same as the environment url, update the value
             try:
