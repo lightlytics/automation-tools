@@ -34,6 +34,10 @@ def main(accounts, aws_profile_name, just_print=False):
     print("Fetching all accounts connected to the organization")
     list_accounts = get_all_accounts(org_client)
 
+    # Get the management account ID
+    management_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
+    print(color(f"Management account ID: {management_account_id}", "blue"))
+
     # Getting only the account IDs of the active AWS accounts
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     print(f"Found {len(sub_accounts)} accounts")
@@ -41,25 +45,31 @@ def main(accounts, aws_profile_name, just_print=False):
     if accounts:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
 
-    print(color(f"Accounts to-be deleted: {[sa[0] for sa in sub_accounts]}", "blue"))
+    print(color(f"Accounts to process: {[sa[0] for sa in sub_accounts]}", "blue"))
 
     for sub_account in sub_accounts:
-        try:
-            # Assume the role in the sub_account[0]
-            assumed_role = sts_client.assume_role(
-                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
-                RoleSessionName='MySessionName'
-            )
-        except Exception as e:
-            print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. Error: {e}", "red"))
-            continue
+        # For management account, use current session directly
+        if sub_account[0] == management_account_id:
+            print(color(f"Account: {sub_account[0]} | Management account - using current session", "blue"))
+            sub_account_session = boto3.Session()
+        else:
+            try:
+                # Assume the role in the sub_account[0]
+                assumed_role = sts_client.assume_role(
+                    RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
+                    RoleSessionName='MySessionName'
+                )
+            except Exception as e:
+                print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. Error: {e}", "red"))
+                continue
 
-        print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
-        sub_account_session = boto3.Session(
-            aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
-            aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
-            aws_session_token=assumed_role['Credentials']['SessionToken']
-        )
+            print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
+            sub_account_session = boto3.Session(
+                aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+                aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+                aws_session_token=assumed_role['Credentials']['SessionToken']
+            )
+
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
         delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print)
