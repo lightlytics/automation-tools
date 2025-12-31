@@ -14,24 +14,22 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(environment, accounts):
-    # Setting up variables
-    ll_url = f"https://{environment}.streamsec.io/graphql"
+def main(accounts, aws_profile_name, just_print=False):
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
     print(color("Creating Boto3 Session", "blue"))
     # Set the AWS_PROFILE environment variable
-    os.environ['AWS_PROFILE'] = "staging"
+    os.environ['AWS_PROFILE'] = aws_profile_name
 
     # Set up the Organizations client
-    org_client = boto3.client('organizations')
+    org_client = boto3.client('organizations', region_name='us-east-1')
 
     # Set up the STS client
-    sts_client = boto3.client('sts')
+    sts_client = boto3.client('sts', region_name='us-east-1')
 
     # Get all activated regions from Org account
-    regions = [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
+    regions = [region['RegionName'] for region in boto3.client('ec2', region_name='us-east-1').describe_regions()['Regions']]
 
     print("Fetching all accounts connected to the organization")
     list_accounts = get_all_accounts(org_client)
@@ -46,11 +44,16 @@ def main(environment, accounts):
     print(color(f"Accounts to-be deleted: {[sa[0] for sa in sub_accounts]}", "blue"))
 
     for sub_account in sub_accounts:
-        # Assume the role in the sub_account[0]
-        assumed_role = sts_client.assume_role(
-            RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
-            RoleSessionName='MySessionName'
-        )
+        try:
+            # Assume the role in the sub_account[0]
+            assumed_role = sts_client.assume_role(
+                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/OrganizationAccountAccessRole',
+                RoleSessionName='MySessionName'
+            )
+        except Exception as e:
+            print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. Error: {e}", "red"))
+            continue
+
         print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
         sub_account_session = boto3.Session(
             aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
@@ -59,16 +62,19 @@ def main(environment, accounts):
         )
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
-        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, ll_url)
+        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='This script will integrate Stream environment with every account in the organization.')
+        description='This script will delete all Lightlytics/StreamSecurity stacks from organization accounts.')
     parser.add_argument(
-        "--environment_sub_domain", help="The Stream environment sub domain", required=True)
-    parser.add_argument(
-        "--accounts", help="Accounts list to iterate when creating the report (e.g '123123123123,321321321321')",
+        "--accounts", help="Accounts list to iterate (e.g '123123123123,321321321321')",
         required=False)
+    parser.add_argument(
+        "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
+        default="staging")
+    parser.add_argument(
+        "--just_print", action="store_true", help="Dry run - only print stacks that would be deleted")
     args = parser.parse_args()
-    main(args.environment_sub_domain, args.accounts)
+    main(args.accounts, args.aws_profile_name, just_print=args.just_print)
