@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(accounts, aws_profile_name, just_print=False):
+def main(accounts, aws_profile_name, just_print=False, force_delete_failed=False):
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
@@ -62,7 +62,7 @@ def main(accounts, aws_profile_name, just_print=False):
         )
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
-        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print)
+        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print, force_delete_failed)
 
 
 if __name__ == "__main__":
@@ -76,5 +76,8 @@ if __name__ == "__main__":
         default="staging")
     parser.add_argument(
         "--just_print", action="store_true", help="Dry run - only print stacks that would be deleted")
+    parser.add_argument(
+        "--force_delete_failed", action="store_true",
+        help="Only target DELETE_FAILED stacks and use FORCE_DELETE_STACK mode")
     args = parser.parse_args()
-    main(args.accounts, args.aws_profile_name, just_print=args.just_print)
+    main(args.accounts, args.aws_profile_name, just_print=args.just_print, force_delete_failed=args.force_delete_failed)

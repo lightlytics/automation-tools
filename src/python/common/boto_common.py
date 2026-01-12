@@ -255,10 +255,14 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
     return True
 
 
-def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print=False):
-    print(color(f"Account: {sub_account[0]} | Deleting all stacks from all regions", "blue"))
+def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print=False, force_delete_failed=False):
+    if force_delete_failed:
+        print(color(f"Account: {sub_account[0]} | Force deleting DELETE_FAILED stacks from all regions", "blue"))
+    else:
+        print(color(f"Account: {sub_account[0]} | Deleting all stacks from all regions", "blue"))
+
     for region in regions:
-        ll_stacks = filter_ll_stacks_by_name(sub_account_session, region)
+        ll_stacks = filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=force_delete_failed)
         if len(ll_stacks) > 0:
             print(color(f"Account: {sub_account[0]} | Found {len(ll_stacks)} stacks in region: {region}", "blue"))
         for ll_stack in ll_stacks:
@@ -266,25 +270,32 @@ def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just
                 print(f"Account: {sub_account[0]} | Stack to be deleted: {ll_stack['StackName']} (region: {region})")
             else:
                 print(color(f"Account: {sub_account[0]} | Deleting stack: {ll_stack['StackName']}", "blue"))
-                delete_stack(sub_account_session, region, ll_stack["StackName"])
+                delete_stack(sub_account_session, region, ll_stack["StackName"], force=force_delete_failed)
                 print(color(f"Account: {sub_account[0]} | Stack began deleting!", "green"))
 
 
-def filter_ll_stacks_by_name(sub_account_session, region):
+def filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=False):
     """Filter stacks by name containing 'Lightlytics' or 'lightlytics'"""
     region_client = sub_account_session.client('cloudformation', region_name=region)
     try:
         stacks = region_client.describe_stacks()["Stacks"]
-        ll_stacks = [s for s in stacks if s["StackStatus"] != "DELETE_COMPLETE"
-                     and ("Lightlytics" in s["StackName"] or "lightlytics" in s["StackName"].lower())]
+        if only_delete_failed:
+            ll_stacks = [s for s in stacks if s["StackStatus"] == "DELETE_FAILED"
+                         and ("Lightlytics" in s["StackName"] or "lightlytics" in s["StackName"].lower())]
+        else:
+            ll_stacks = [s for s in stacks if s["StackStatus"] != "DELETE_COMPLETE"
+                         and ("Lightlytics" in s["StackName"] or "lightlytics" in s["StackName"].lower())]
         return ll_stacks
     except Exception:
         return []
 
 
-def delete_stack(sub_account_session, region, stack_name):
+def delete_stack(sub_account_session, region, stack_name, force=False):
     region_client = sub_account_session.client('cloudformation', region_name=region)
-    region_client.delete_stack(StackName=stack_name, DeletionMode='FORCE_DELETE_STACK')
+    if force:
+        region_client.delete_stack(StackName=stack_name, DeletionMode='FORCE_DELETE_STACK')
+    else:
+        region_client.delete_stack(StackName=stack_name)
 
 
 def filter_ll_stacks_from_url(sub_account_session, region, ll_url, return_only_names=False):
