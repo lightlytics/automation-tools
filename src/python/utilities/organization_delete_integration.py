@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
-def main(accounts, aws_profile_name, just_print=False, force_delete_failed=False):
+def main(accounts, aws_profile_name, just_print=False, force_delete_failed=False, stack_name_contains=None):
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
@@ -62,7 +62,7 @@ def main(accounts, aws_profile_name, just_print=False, force_delete_failed=False
         )
         print(color(f"Account: {sub_account[0]} | Session initialized successfully", "green"))
 
-        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print, force_delete_failed)
+        delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print, force_delete_failed, stack_name_contains)
 
 
 if __name__ == "__main__":
@@ -79,5 +79,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force_delete_failed", action="store_true",
         help="Only target DELETE_FAILED stacks and use FORCE_DELETE_STACK mode")
+    parser.add_argument(
+        "--stack_name_contains", help="Filter stacks by custom name pattern (case-insensitive). "
+        "When provided, replaces the default Lightlytics/lightlytics filter.",
+        required=False)
     args = parser.parse_args()
-    main(args.accounts, args.aws_profile_name, just_print=args.just_print, force_delete_failed=args.force_delete_failed)
+    main(args.accounts, args.aws_profile_name, just_print=args.just_print, force_delete_failed=args.force_delete_failed, stack_name_contains=args.stack_name_contains)

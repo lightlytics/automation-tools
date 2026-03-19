@@ -255,14 +255,14 @@ def deploy_init_stack(account_information, graph_client, sub_account, sub_accoun
     return True
 
 
-def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print=False, force_delete_failed=False):
+def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just_print=False, force_delete_failed=False, stack_name_contains=None):
     if force_delete_failed:
         print(color(f"Account: {sub_account[0]} | Force deleting DELETE_FAILED stacks from all regions", "blue"))
     else:
         print(color(f"Account: {sub_account[0]} | Deleting all stacks from all regions", "blue"))
 
     for region in regions:
-        ll_stacks = filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=force_delete_failed)
+        ll_stacks = filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=force_delete_failed, stack_name_contains=stack_name_contains)
         if len(ll_stacks) > 0:
             print(color(f"Account: {sub_account[0]} | Found {len(ll_stacks)} stacks in region: {region}", "blue"))
         for ll_stack in ll_stacks:
@@ -274,17 +274,30 @@ def delete_stacks_in_all_regions(sub_account, sub_account_session, regions, just
                 print(color(f"Account: {sub_account[0]} | Stack began deleting!", "green"))
 
 
-def filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=False):
-    """Filter stacks by name containing 'Lightlytics' or 'lightlytics'"""
+def filter_ll_stacks_by_name(sub_account_session, region, only_delete_failed=False, stack_name_contains=None):
+    """Filter stacks by name. When stack_name_contains is provided, filter by that pattern (case-insensitive).
+    Otherwise, filter by 'Lightlytics' or 'lightlytics'."""
     region_client = sub_account_session.client('cloudformation', region_name=region)
     try:
         stacks = region_client.describe_stacks()["Stacks"]
+
+        KNOWN_PREFIXES = ["lightlytics", "streamsec"]
+
+        def name_matches(stack_name):
+            name_lower = stack_name.lower()
+            is_known_stack = any(prefix in name_lower for prefix in KNOWN_PREFIXES)
+            if not is_known_stack:
+                return False
+            if stack_name_contains:
+                return stack_name_contains.lower() in name_lower
+            return True
+
         if only_delete_failed:
             ll_stacks = [s for s in stacks if s["StackStatus"] == "DELETE_FAILED"
-                         and ("Lightlytics" in s["StackName"] or "lightlytics" in s["StackName"].lower())]
+                         and name_matches(s["StackName"])]
         else:
             ll_stacks = [s for s in stacks if s["StackStatus"] != "DELETE_COMPLETE"
-                         and ("Lightlytics" in s["StackName"] or "lightlytics" in s["StackName"].lower())]
+                         and name_matches(s["StackName"])]
         return ll_stacks
     except Exception:
         return []
