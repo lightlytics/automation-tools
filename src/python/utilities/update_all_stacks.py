@@ -41,9 +41,12 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
             log_with_color(f"Failed to parse custom tags: {str(e)}", "red", "error")
             raise
     
-    # Set the AWS_PROFILE environment variable
-    os.environ['AWS_PROFILE'] = aws_profile_name
-    log_with_color(f"Using AWS profile: {aws_profile_name}", "blue")
+    # Set the AWS_PROFILE environment variable only if explicitly provided
+    if aws_profile_name:
+        os.environ['AWS_PROFILE'] = aws_profile_name
+        log_with_color(f"Using AWS profile: {aws_profile_name}", "blue")
+    else:
+        log_with_color("No AWS profile specified, using default credential chain", "blue")
     
     sts_client = boto3.client('sts')
     try:
@@ -296,7 +299,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="This script will integrate StreamSecurity environment with every account in the organization.")
     parser.add_argument(
-        "--aws_profile_name", help="The AWS profile with admin permissions in organization account", default="default")
+        "--aws_profile_name", help="The AWS profile with admin permissions in organization account (optional, uses default credential chain if not specified)", default=None)
     parser.add_argument(
         "--control_role", help="Specify a role for control", default="OrganizationAccountAccessRole")
     parser.add_argument(
