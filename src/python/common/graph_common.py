@@ -5,20 +5,24 @@ import time
 
 
 class GraphCommon(object):
-    def __init__(self, url, email, pw, customer_id=None, otp=None):
+    def __init__(self, url, email=None, pw=None, customer_id=None, otp=None, token=None):
         """ Initialize GraphCommon class to graph functions.
             :param url (str)            - The url of the environment.
             :param email (str)          - The email for login.
             :param pw (str)             - The password for login.
             :param otp (str)            - 2FA token.
             :param customer_id (str)    - The customer ID for operations; Defaults to the Demo Customer ID.
+            :param token (str)          - Pre-existing API token; if provided, skips email/pw login.
         """
         self.url = url
         self.email = email
         self.pw = pw
-        self.token = self.get_token(email, pw)
-        if otp:
-            self.token = self.get_token_otp(otp, self.token)
+        if token:
+            self.token = token if token.startswith('Bearer ') else f'Bearer {token}'
+        else:
+            self.token = self.get_token(email, pw)
+            if otp:
+                self.token = self.get_token_otp(otp, self.token)
         time.sleep(2)
         self.customer_id = customer_id or self.get_customer_id()
 
@@ -805,15 +809,23 @@ class GraphCommon(object):
             variables['filters']['protocol'] = protocols.split(",")
         return self.graph_query(operation, variables, query)['data']['IPTraffic']['results']
 
-    def get_detections(self):
+    def get_detections(self, page_size=500):
         operation = 'Detections'
-        variables = {"filters": {"acknowledged": True}}
         query = ("query Detections($filters: DetectionsFilters, $sort: DetectionsSort, $skip: Int, $limit: Int){"
                  "get_detections(filters: $filters, sort: $sort, skip: $skip, limit: $limit){total_count results{_id "
                  "timestamp activity_type source account_id anomaly_severity resource_id resource_type "
                  "mitre_categories acknowledged acknowledgement_details{timestamp user reason __typename}signal_types "
                  "__typename}__typename}}")
-        return self.graph_query(operation, variables, query)['data']['get_detections']['results']
+        all_results = []
+        skip = 0
+        while True:
+            variables = {"filters": {}, "skip": skip, "limit": page_size}
+            batch = self.graph_query(operation, variables, query)['data']['get_detections']['results']
+            all_results.extend(batch)
+            if len(batch) < page_size:
+                break
+            skip += page_size
+        return all_results
 
     def get_detection_enrichment(self, detection_id):
         operation = 'Detection'
