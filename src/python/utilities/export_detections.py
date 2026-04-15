@@ -36,10 +36,14 @@ def enrich_detections(graph_client, detection):
 
 
 def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_time, end_time, token=None, stage=None):
-    # Validate date format (raises ValueError on bad input, surfaced as 400 by main.py)
-    for date_to_check in [start_time, end_time]:
-        datetime.strptime(date_to_check, "%Y-%m-%d")
-    if datetime.strptime(start_time, "%Y-%m-%d") > datetime.strptime(end_time, "%Y-%m-%d"):
+    # Parse and validate dates once (ValueError surfaces as 400 in main.py)
+    try:
+        start_dt = datetime.strptime(start_time, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        end_dt = datetime.strptime(end_time, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+    except ValueError as e:
+        raise ValueError(f"Dates must be in YYYY-MM-DD format: {e}")
+    if start_dt > end_dt:
         raise ValueError(f"Start time {start_time} is after end time {end_time}")
 
     # Connecting to Stream
@@ -52,20 +56,23 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_time, end
     all_detections = graph_client.get_detections()
     log.info(f"Found {len(all_detections)} detections")
 
-    # Filter by time range
-    start_dt = datetime.strptime(start_time, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    end_dt = datetime.strptime(end_time, "%Y-%m-%d").replace(
-        hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+    # Filter by time range (client-side; see TODO above)
     filtered_detections = [d for d in all_detections
                            if start_dt <= _parse_timestamp(d.get('timestamp')) <= end_dt]
     log.info(f"Filtered to {len(filtered_detections)} detections between {start_time} and {end_time}")
 
     if not filtered_detections:
-        raise ValueError(f"No detections found in the range {start_time} to {end_time}")
+        # LookupError is mapped to HTTP 404 in main.py — request was valid, nothing matched.
+        raise LookupError(f"No detections found in the range {start_time} to {end_time}")
 
-    # Enrich detections
+    # Enrich detections — surface individual failures in the log rather than silently discarding
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        [executor.submit(enrich_detections, graph_client, detection) for detection in filtered_detections]
+        futures = [executor.submit(enrich_detections, graph_client, detection)
+                   for detection in filtered_detections]
+        for future in concurrent.futures.as_completed(futures):
+            exc = future.exception()
+            if exc is not None:
+                log.warning(f"Detection enrichment failed: {exc}")
 
     # Get columns names
     column_names = list(filtered_detections[0].keys())
@@ -74,10 +81,19 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_time, end
     csv_file = f'{environment.upper()} enriched detections export {start_time} {end_time}.csv'
 
     log.info(f'Generating CSV file, file name: "{csv_file}"')
-    with open(csv_file, mode='w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=column_names, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(filtered_detections)
+    try:
+        with open(csv_file, mode='w', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=column_names, extrasaction='ignore')
+            writer.writeheader()
+            writer.writerows(filtered_detections)
+    except Exception:
+        # Clean up partially-written file so it doesn't linger on disk
+        if os.path.exists(csv_file):
+            try:
+                os.unlink(csv_file)
+            except OSError:
+                pass
+        raise
     log.info("File generated successfully, export complete!")
 
     return csv_file

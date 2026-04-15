@@ -265,6 +265,8 @@ def export_detections(payload: Dict[Any, Any], background_tasks: BackgroundTasks
         background_tasks.add_task(remove_file, file_name)
         with open(file_name) as csv_file:
             return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
