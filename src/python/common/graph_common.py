@@ -810,6 +810,8 @@ class GraphCommon(object):
         return self.graph_query(operation, variables, query)['data']['IPTraffic']['results']
 
     def get_detections(self, page_size=500):
+        # 500 per page balances fewer round-trips against request payload size;
+        # the server's default implicit limit was dropping results beyond ~100.
         operation = 'Detections'
         query = ("query Detections($filters: DetectionsFilters, $sort: DetectionsSort, $skip: Int, $limit: Int){"
                  "get_detections(filters: $filters, sort: $sort, skip: $skip, limit: $limit){total_count results{_id "
@@ -1081,6 +1083,10 @@ class GraphCommon(object):
         res = requests.post(self.url, json=payload, headers={"Authorization": self.token, "customer": customer_id})
         if bool(res):
             if 'UNAUTHENTICATED' in str(json.loads(res.text)):
+                # Token-auth sessions have no credentials to re-authenticate with;
+                # surface the original failure instead of calling get_token(None, None).
+                if not self.email or not self.pw:
+                    return json.loads(res.text)
                 self.token = self.get_token(self.email, self.pw)
                 res = requests.post(self.url, json=payload, headers={"Authorization": self.token})
             return json.loads(res.text)
