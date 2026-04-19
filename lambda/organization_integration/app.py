@@ -2,6 +2,7 @@ import boto3
 import random
 import os
 import concurrent.futures
+from botocore.exceptions import ClientError
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
 
@@ -124,10 +125,16 @@ def integrate_sub_account(
         if sub_account[0] == org_account_id:
             sub_account_session = boto3.Session()
         else:
-            assumed_role = sts_client.assume_role(
-                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
-                RoleSessionName='MySessionName'
-            )
+            role_arn = f'arn:aws:iam::{sub_account[0]}:role/{control_role}'
+            try:
+                assumed_role = sts_client.assume_role(
+                    RoleArn=role_arn,
+                    RoleSessionName='MySessionName'
+                )
+            except ClientError as e:
+                err_msg = f"Account: {sub_account[0]} | Failed to assume {role_arn}: {e}"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg) from e
             print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
             sub_account_session = boto3.Session(
                 aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
