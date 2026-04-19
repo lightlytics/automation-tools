@@ -13,6 +13,10 @@ class GraphCommonToken(GraphCommon):
     is issued. If the token is ever rejected, graph_query's auto-refresh branch
     will fail fast since email/pw are None — that's intentional: with an API
     token there's nothing to refresh to.
+
+    Maintenance note: this class deliberately does NOT call super().__init__().
+    If GraphCommon.__init__ ever adds non-login setup (e.g. a shared session,
+    default headers, retry config), mirror that setup here.
     """
     def __init__(self, url, api_token, customer_id=None):
         self.url = url
