@@ -99,7 +99,7 @@ def main():
                 "Sid": "VisualEditor1",
                 "Effect": "Allow",
                 "Action": "sts:AssumeRole",
-                "Resource": f"arn:aws:iam::*:role/OrganizationAccountAccessRole"
+                "Resource": f"arn:aws:iam::*:role/{args.control_role}"
             }
         ]
     }
