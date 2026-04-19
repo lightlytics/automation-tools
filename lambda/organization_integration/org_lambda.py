@@ -9,8 +9,10 @@ import tempfile
 
 parser = argparse.ArgumentParser(description="Streamsec Organization Lambda Setup Script")
 parser.add_argument("--environment", required=False, help="The environment name in which the Lambda function will operate.")
-parser.add_argument("--user-name", required=False, help="The username for the environment.")
-parser.add_argument("--password", required=False, help="The password for the environment.")
+parser.add_argument("--user-name", required=False, help="The username for the environment. Ignored if --api-token is provided.")
+parser.add_argument("--password", required=False, help="The password for the environment. Ignored if --api-token is provided.")
+parser.add_argument("--api-token", required=False, help="Stream Security API token. If set, --user-name and --password are not required.")
+parser.add_argument("--aws-profile", required=False, help="AWS profile name to use. If omitted, the default credential chain (env vars, SSO session, instance role, etc.) is used.")
 parser.add_argument("--cleanup", action="store_true", help="Clean up the resources created by the script.")
 parser.add_argument("--accounts", required=False, help="manually specify accounts to integrate.")
 parser.add_argument("--ws-id", required=False, help="The workspace ID.")
@@ -22,28 +24,39 @@ parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creati
 parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
 args = parser.parse_args()
 
-iam_client = boto3.client('iam')
-sts_client = boto3.client('sts')
-lambda_client = boto3.client('lambda')
-events_client = boto3.client('events')
+# Apply AWS profile before creating any boto3 clients. If not set, boto3 falls
+# back to its default credential chain (env vars, SSO, instance role, etc.).
+if args.aws_profile:
+    os.environ['AWS_PROFILE'] = args.aws_profile
 
-aws_account_id = sts_client.get_caller_identity()['Account']
+
+def _aws_clients():
+    return (
+        boto3.client('iam'),
+        boto3.client('sts'),
+        boto3.client('lambda'),
+        boto3.client('events'),
+    )
+
 
 def main():
     missing_args = []
     if not args.environment:
         missing_args.append("--environment")
-    if not args.user_name:
-        missing_args.append("--user-name")
-    if not args.password:
-        missing_args.append("--password")
+    if not args.api_token:
+        if not args.user_name:
+            missing_args.append("--user-name")
+        if not args.password:
+            missing_args.append("--password")
     if not args.ws_id:
         missing_args.append("--ws-id")
 
     if missing_args:
         print(f"Missing required arguments: {', '.join(missing_args)}")
-        print("These arguments are required unless --cleanup is specified.")
+        print("Either --api-token, or both --user-name and --password, must be provided (unless --cleanup is specified).")
         return
+
+    iam_client, sts_client, lambda_client, events_client = _aws_clients()
     
     # verify the region is us-east-1
     region = boto3.Session().region_name
@@ -147,8 +160,6 @@ def main():
     function_name = "streamsec-organization-lambda"
     env_vars = {
         "ENVIRONMENT": args.environment,
-        "ENVIRONMENT_USER_NAME": args.user_name,
-        "ENVIRONMENT_PASSWORD": args.password,
         "WS_ID": args.ws_id,
         "PARALLEL": "8",
         "CONTROL_ROLE": args.control_role,
@@ -156,6 +167,11 @@ def main():
         "RESPONSE_REGION": args.response_region,
         "EKS_AUDIT_LOGS": str(args.eks_audit_logs).lower(),
     }
+    if args.api_token:
+        env_vars["API_TOKEN"] = args.api_token
+    else:
+        env_vars["ENVIRONMENT_USER_NAME"] = args.user_name
+        env_vars["ENVIRONMENT_PASSWORD"] = args.password
     if args.accounts is not None:
         env_vars["ACCOUNTS"] = args.accounts
         
@@ -228,7 +244,9 @@ def cleanup():
     # try to delete the resources created by the script
     # if resources are not found, ignore the exception
 
-    
+    iam_client, sts_client, lambda_client, events_client = _aws_clients()
+    aws_account_id = sts_client.get_caller_identity()['Account']
+
     try:
         # Delete the Lambda function
         print("Deleting the Lambda function...")

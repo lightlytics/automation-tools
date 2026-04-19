@@ -5,10 +5,28 @@ import concurrent.futures
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
 
+
+class GraphCommonToken(GraphCommon):
+    """GraphCommon variant authenticated with a long-lived API token.
+
+    Bypasses the email/password login in the base __init__ so no Login mutation
+    is issued. If the token is ever rejected, graph_query's auto-refresh branch
+    will fail fast since email/pw are None — that's intentional: with an API
+    token there's nothing to refresh to.
+    """
+    def __init__(self, url, api_token, customer_id=None):
+        self.url = url
+        self.email = None
+        self.pw = None
+        self.token = api_token if api_token.startswith("Bearer ") else f"Bearer {api_token}"
+        self.customer_id = customer_id or self.get_customer_id()
+
+
 def lambda_handler(event, context):
     # Extract parameters from environment variables
     environment = os.environ.get('ENVIRONMENT')
     domain = os.environ.get('ENVIRONMENT_DOMAIN', 'streamsec.io')
+    ll_api_token = os.environ.get('API_TOKEN')
     ll_username = os.environ.get('ENVIRONMENT_USER_NAME')
     ll_password = os.environ.get('ENVIRONMENT_PASSWORD')
     accounts = os.environ.get('ACCOUNTS', None)
@@ -40,7 +58,12 @@ def lambda_handler(event, context):
 
     print(f"Trying to login into Stream Security environment: {environment}")
     ll_url = f"https://{environment}.{domain}/graphql"
-    graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+    if ll_api_token:
+        graph_client = GraphCommonToken(ll_url, ll_api_token, ws_id)
+    elif ll_username and ll_password:
+        graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+    else:
+        raise Exception("Missing Stream Security credentials: set API_TOKEN, or both ENVIRONMENT_USER_NAME and ENVIRONMENT_PASSWORD")
     print("Logged in successfully!")
 
     print("Creating Boto3 Session")
