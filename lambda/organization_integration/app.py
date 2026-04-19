@@ -95,24 +95,41 @@ def lambda_handler(event, context):
 
     print(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}")
 
+    failures = []
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            results = [executor.submit(
-                integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, org_account_id, parallel,
-                response, response_region, response_exclude_runbooks, environment, domain,
-                eks_audit_logs, eks_audit_logs_regions
-            ) for sub_account in sub_accounts]
-            concurrent.futures.wait(results)
+            future_to_account = {
+                executor.submit(
+                    integrate_sub_account,
+                    sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
+                    control_role, org_account_id, parallel,
+                    response, response_region, response_exclude_runbooks, environment, domain,
+                    eks_audit_logs, eks_audit_logs_regions
+                ): sub_account for sub_account in sub_accounts
+            }
+            for future in concurrent.futures.as_completed(future_to_account):
+                sub_account = future_to_account[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    failures.append((sub_account[0], str(e)))
     else:
         for sub_account in sub_accounts:
-            integrate_sub_account(
-                sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role, org_account_id,
-                response, response_region, response_exclude_runbooks, environment, domain,
-                eks_audit_logs, eks_audit_logs_regions
-            )
+            try:
+                integrate_sub_account(
+                    sub_account, sts_client, graph_client, regions, random_int,
+                    custom_tags, regions_to_integrate, control_role, org_account_id,
+                    response, response_region, response_exclude_runbooks, environment, domain,
+                    eks_audit_logs, eks_audit_logs_regions
+                )
+            except Exception as e:
+                failures.append((sub_account[0], str(e)))
+
+    if failures:
+        print(color(f"Integration finished with {len(failures)} failure(s):", "red"))
+        for account_id, msg in failures:
+            print(color(f"  {account_id}: {msg}", "red"))
+        raise Exception(f"{len(failures)} account(s) failed to integrate")
 
     print("Integration finished successfully!")
 
