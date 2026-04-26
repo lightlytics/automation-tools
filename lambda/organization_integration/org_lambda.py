@@ -22,6 +22,7 @@ parser.add_argument("--response-region", default="us-east-1", help="Region for r
 parser.add_argument("--response-exclude-runbooks", help="Comma separated list of runbooks to exclude from response stack.")
 parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creation of the EKS audit logs.")
 parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
+parser.add_argument("--invoke-after-deploy", action="store_true", help="Invoke the Lambda asynchronously after deploy to onboard existing accounts immediately.")
 args = parser.parse_args()
 
 # Apply AWS profile before creating any boto3 clients. If not set, boto3 falls
@@ -137,7 +138,7 @@ def main():
         PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
     )
 
-    time.sleep(5)  # Wait for role to propagate
+    time.sleep(10)  # Wait for role + cross-account propagation; 5s was too tight when --invoke-after-deploy hits AssumeRole right after deploy.
 
     # --- Create deployment package (zip) with dependencies ---
     zip_filename = "lambda_deploy.zip"
@@ -203,9 +204,15 @@ def main():
 
     # Create EventBridge rule
     rule_name = "streamsec-organization-newaccount-rule"
+    # CreateAccountResult lands as a service event (async completion of CreateAccount),
+    # not as an API call event. Including both detail-types so the rule matches regardless
+    # of how AWS classifies the record.
     event_pattern = {
         "source": ["aws.organizations"],
-        "detail-type": ["AWS API Call via CloudTrail"],
+        "detail-type": [
+            "AWS API Call via CloudTrail",
+            "AWS Service Event via CloudTrail",
+        ],
         "detail": {"eventName": ["CreateAccountResult"]}
     }
     events_client.put_rule(
@@ -235,6 +242,20 @@ def main():
     )
 
     print("Setup completed successfully!")
+
+    if args.invoke_after_deploy:
+        print("Invoking the Lambda asynchronously to onboard existing accounts...")
+        lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType='Event',
+            Payload=b'{}',
+        )
+        profile_flag = f" --profile {args.aws_profile}" if args.aws_profile else ""
+        print(
+            "Lambda invoked. Tail logs with:\n"
+            f"  aws logs tail /aws/lambda/{function_name} --follow --since 1m"
+            f" --region us-east-1{profile_flag}"
+        )
 
 def cleanup():
     proceed = input("Do you want to cleanup this script resources? (yes/no): ")
