@@ -18,6 +18,8 @@ class GraphCommon(object):
         self.email = email
         self.pw = pw
         if token:
+            if not isinstance(token, str):
+                raise ValueError(f"token must be a string, got {type(token).__name__}")
             self.token = token if token.startswith('Bearer ') else f'Bearer {token}'
         else:
             self.token = self.get_token(email, pw)
@@ -1088,7 +1090,9 @@ class GraphCommon(object):
                 if not self.email or not self.pw:
                     return json.loads(res.text)
                 self.token = self.get_token(self.email, self.pw)
-                res = requests.post(self.url, json=payload, headers={"Authorization": self.token})
+                res = requests.post(
+                    self.url, json=payload,
+                    headers={"Authorization": self.token, "customer": customer_id})
             return json.loads(res.text)
         else:
             print(f"res: {res}")

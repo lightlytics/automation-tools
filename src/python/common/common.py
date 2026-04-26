@@ -27,6 +27,8 @@ def get_graph_client(environment, ll_username, ll_password, ll_f2a, ws_name, sta
         if token:
             # API tokens are workspace-scoped; the `workspaces` query isn't available,
             # so ws_name must be the workspace ID and we use it directly as customer_id.
+            if not ws_name:
+                raise ValueError("Workspace ID is required when authenticating with an API token")
             graph_client = GraphCommon(ll_graph_url, otp=ll_f2a, token=token, customer_id=ws_name)
         else:
             graph_client = GraphCommon(ll_graph_url, ll_username, ll_password, otp=ll_f2a)
