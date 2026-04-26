@@ -243,17 +243,17 @@ def export_vulnerabilities(payload: Dict[Any, Any], background_tasks: Background
 @app.post("/export_detections")
 def export_detections(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Export detections requested - {payload['environment_sub_domain'].replace('!', '')}")
-    auth_token = payload.get('auth_token') or None
+    token = payload.get('token') or None
     username = payload.get('environment_user_name') or None
     password = payload.get('environment_password') or None
-    if not auth_token and not (username and password):
+    if not token and not (username and password):
         raise HTTPException(
             status_code=400,
-            detail="Must provide either auth_token or both environment_user_name and environment_password")
+            detail="Must provide either token or both environment_user_name and environment_password")
     arguments = [payload['environment_sub_domain'].replace('!', ''), username, password,
                  payload.get('environment_f2a_token') or None, payload['ws_name'],
                  payload['start_time'], payload['end_time']]
-    kwargs = {'token': auth_token}
+    kwargs = {'token': token}
     if payload['environment_sub_domain'].startswith('!'):
         kwargs['stage'] = True
     try:

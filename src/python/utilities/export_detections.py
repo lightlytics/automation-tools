@@ -2,6 +2,7 @@ import argparse
 import concurrent.futures
 import csv
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -17,17 +18,26 @@ except ModuleNotFoundError:
 def _parse_timestamp(ts):
     if ts is None:
         return datetime.min.replace(tzinfo=timezone.utc)
-    if isinstance(ts, (int, float)):
+    # bool is a subclass of int in Python — exclude it explicitly so True/False
+    # don't get treated as Unix timestamps (1970-01-01 00:00:01 / epoch).
+    if isinstance(ts, (int, float)) and not isinstance(ts, bool):
         # Unix epoch: detect milliseconds vs seconds
         if ts > 1e12:
             ts = ts / 1000
         return datetime.fromtimestamp(ts, tz=timezone.utc)
     if isinstance(ts, str):
-        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        try:
+            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        except ValueError:
+            log.warning(f"Could not parse timestamp string {ts!r}; excluding detection from range")
+            return datetime.min.replace(tzinfo=timezone.utc)
         # Force UTC on naive datetimes (e.g. "2024-01-15T10:30:00" with no offset)
         # so the later comparison against tz-aware bounds doesn't crash.
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-    raise ValueError(f"Unsupported timestamp type: {type(ts).__name__}")
+    # Unknown type (dict/list/bool/etc. — possible if the GraphQL schema changes):
+    # log a warning and exclude the detection rather than killing the whole export.
+    log.warning(f"Unsupported timestamp type {type(ts).__name__} ({ts!r}); excluding detection from range")
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def enrich_detections(graph_client, detection):
@@ -74,11 +84,14 @@ def main(environment, ll_username, ll_password, ll_f2a, ws_name, start_time, end
             if exc is not None:
                 log.warning(f"Detection enrichment failed: {exc}")
 
-    # Get columns names
+    # Get column names
     column_names = list(filtered_detections[0].keys())
 
-    # Set CSV file name
-    csv_file = f'{environment.upper()} enriched detections export {start_time} {end_time}.csv'
+    # Sanitize the user-supplied environment slug before using it in a filesystem
+    # path (defense-in-depth against path traversal — login would normally fail
+    # first on a hostile value, but we don't rely on that).
+    safe_env = re.sub(r'[^A-Za-z0-9._-]', '_', environment).upper() or 'EXPORT'
+    csv_file = f'{safe_env} enriched detections export {start_time} {end_time}.csv'
 
     log.info(f'Generating CSV file, file name: "{csv_file}"')
     try:

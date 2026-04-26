@@ -93,7 +93,7 @@ document.addEventListener("DOMContentLoaded", function () {
             { name: "environment_password", type: "password", placeholder: "Enter Password (leave blank if using token)", displayName: "Environment Password (leave blank if using API token)" },
             { name: "environment_f2a_token", type: "password", placeholder: "Leave blank if F2A not set" },
             { name: "ws_name", type: "text", placeholder: "Workspace name for user/password login, or workspace ID when using API token", required: true, displayName: "Workspace (Name for user/password, ID for API token)" },
-            { name: "auth_token", type: "password", placeholder: "Paste API token here (alternative to user/password login)", displayName: "API Token (alternative to user/password)" },
+            { name: "token", type: "password", placeholder: "Paste API token here (alternative to user/password login)", displayName: "API Token (alternative to user/password)" },
             { name: "start_time", type: "date", required: true, displayName: "Start Date" },
             { name: "end_time", type: "date", required: true, displayName: "End Date" }
         ]
