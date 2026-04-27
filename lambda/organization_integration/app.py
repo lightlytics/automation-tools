@@ -120,7 +120,7 @@ def lambda_handler(event, context):
                 integrate_sub_account(
                     sub_account, sts_client, graph_client, regions, random_int,
                     custom_tags, regions_to_integrate, control_role, org_account_id,
-                    response, response_region, response_exclude_runbooks, environment, domain,
+                    parallel, response, response_region, response_exclude_runbooks, environment, domain,
                     eks_audit_logs, eks_audit_logs_regions
                 )
             except Exception as e:
