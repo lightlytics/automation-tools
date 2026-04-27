@@ -224,8 +224,11 @@ def integrate_sub_account(
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
             print(color(f"Account: {sub_account[0]} | Creating account in StreamSecurity", "blue"))
-            graph_client.create_account(
-                sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
+            if not graph_client.create_account(
+                    sub_account[0], [sub_account_session.region_name], display_name=sub_account[1]):
+                err_msg = f"Account: {sub_account[0]} | Failed to create account in StreamSecurity"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg)
             print(color(f"Account: {sub_account[0]} | Account created successfully", "green"))
 
         print(color(f"Account: {sub_account[0]} | Fetching relevant account information", "blue"))
