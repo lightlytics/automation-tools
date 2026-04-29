@@ -88,7 +88,14 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         ],
         "/export_detections": [
-            ...defaultParameters
+            { name: "environment_sub_domain", type: "text", placeholder: "Enter Sub Domain", required: true },
+            { name: "environment_user_name", type: "text", placeholder: "Enter User Name (leave blank if using token)", displayName: "Environment User Name (leave blank if using API token)" },
+            { name: "environment_password", type: "password", placeholder: "Enter Password (leave blank if using token)", displayName: "Environment Password (leave blank if using API token)" },
+            { name: "environment_f2a_token", type: "password", placeholder: "Leave blank if F2A not set" },
+            { name: "ws_name", type: "text", placeholder: "Workspace name for user/password login, or workspace ID when using API token", required: true, displayName: "Workspace (Name for user/password, ID for API token)" },
+            { name: "token", type: "password", placeholder: "Paste API token here (alternative to user/password login)", displayName: "API Token (alternative to user/password)" },
+            { name: "start_time", type: "date", required: true, displayName: "Start Date" },
+            { name: "end_time", type: "date", required: true, displayName: "End Date" }
         ]
     };
 
@@ -122,19 +129,19 @@ document.addEventListener("DOMContentLoaded", function () {
                     selectElement.appendChild(optionElement);
                 });
 
-                const displayName = parameterDisplayNames[parameter.name] || parameter.displayName || parameter.name;
+                const displayName = parameter.displayName || parameterDisplayNames[parameter.name] || parameter.name;
                 inputGroup.innerHTML = `
                     <label for="${parameter.name}" class="form-label">${displayName}</label>
                 `;
                 inputGroup.appendChild(selectElement);
             } else if (parameter.type === "boolean") {
-                const displayName = parameterDisplayNames[parameter.name] || parameter.name;
+                const displayName = parameter.displayName || parameterDisplayNames[parameter.name] || parameter.name;
                 inputGroup.innerHTML = `
                     <label for="${parameter.name}" class="form-label">${displayName}</label>
                     <input type="checkbox" class="form-check-input" id="${parameter.name}" name="${parameter.name}">
                 `;
             } else {
-                const displayName = parameterDisplayNames[parameter.name] || parameter.name;
+                const displayName = parameter.displayName || parameterDisplayNames[parameter.name] || parameter.name;
                 inputGroup.innerHTML = `
                     <label for="${parameter.name}" class="form-label">${displayName}</label>
                     <input type="${parameter.type}" class="form-control" id="${parameter.name}" name="${parameter.name}" placeholder="${parameter.placeholder}" ${parameter.required ? "required" : ""}>

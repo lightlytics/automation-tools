@@ -243,13 +243,21 @@ def export_vulnerabilities(payload: Dict[Any, Any], background_tasks: Background
 @app.post("/export_detections")
 def export_detections(payload: Dict[Any, Any], background_tasks: BackgroundTasks):
     log.info(f"### Export detections requested - {payload['environment_sub_domain'].replace('!', '')}")
-    arguments = [payload['environment_sub_domain'].replace('!', ''), payload['environment_user_name'],
-                 payload['environment_password'], payload.get('environment_f2a_token', None), payload['ws_name'],
-                 payload.get('accounts', None)]
+    token = payload.get('token') or None
+    username = payload.get('environment_user_name') or None
+    password = payload.get('environment_password') or None
+    if not token and not (username and password):
+        raise HTTPException(
+            status_code=400,
+            detail="Must provide either token or both environment_user_name and environment_password")
+    arguments = [payload['environment_sub_domain'].replace('!', ''), username, password,
+                 payload.get('environment_f2a_token') or None, payload['ws_name'],
+                 payload['start_time'], payload['end_time']]
+    kwargs = {'token': token}
     if payload['environment_sub_domain'].startswith('!'):
-        arguments.append("true")
+        kwargs['stage'] = True
     try:
-        file_name = export_enriched_detections.main(*arguments)
+        file_name = export_enriched_detections.main(*arguments, **kwargs)
         headers = {
             'Content-Type': 'text/csv',
             'Content-Disposition': f'attachment; filename="{file_name}"'
@@ -257,6 +265,10 @@ def export_detections(payload: Dict[Any, Any], background_tasks: BackgroundTasks
         background_tasks.add_task(remove_file, file_name)
         with open(file_name) as csv_file:
             return StreamingResponse(iter([csv_file.read()]), headers=headers)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
