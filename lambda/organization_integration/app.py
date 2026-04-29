@@ -1,14 +1,18 @@
 import boto3
 import random
 import os
+import time
 import concurrent.futures
+from botocore.exceptions import ClientError
 from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
+
 
 def lambda_handler(event, context):
     # Extract parameters from environment variables
     environment = os.environ.get('ENVIRONMENT')
     domain = os.environ.get('ENVIRONMENT_DOMAIN', 'streamsec.io')
+    ll_api_token = os.environ.get('API_TOKEN')
     ll_username = os.environ.get('ENVIRONMENT_USER_NAME')
     ll_password = os.environ.get('ENVIRONMENT_PASSWORD')
     accounts = os.environ.get('ACCOUNTS', None)
@@ -40,7 +44,12 @@ def lambda_handler(event, context):
 
     print(f"Trying to login into Stream Security environment: {environment}")
     ll_url = f"https://{environment}.{domain}/graphql"
-    graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+    if ll_api_token:
+        graph_client = GraphCommon(ll_url, token=ll_api_token, customer_id=ws_id)
+    elif ll_username and ll_password:
+        graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+    else:
+        raise Exception("Missing Stream Security credentials: set API_TOKEN, or both ENVIRONMENT_USER_NAME and ENVIRONMENT_PASSWORD")
     print("Logged in successfully!")
 
     print("Creating Boto3 Session")
@@ -67,24 +76,41 @@ def lambda_handler(event, context):
 
     print(f"Accounts to-be integrated: {[sa[0] for sa in sub_accounts]}")
 
+    failures = []
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            results = [executor.submit(
-                integrate_sub_account,
-                sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, org_account_id, parallel,
-                response, response_region, response_exclude_runbooks, environment, domain,
-                eks_audit_logs, eks_audit_logs_regions
-            ) for sub_account in sub_accounts]
-            concurrent.futures.wait(results)
+            future_to_account = {
+                executor.submit(
+                    integrate_sub_account,
+                    sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
+                    control_role, org_account_id, parallel,
+                    response, response_region, response_exclude_runbooks, environment, domain,
+                    eks_audit_logs, eks_audit_logs_regions
+                ): sub_account for sub_account in sub_accounts
+            }
+            for future in concurrent.futures.as_completed(future_to_account):
+                sub_account = future_to_account[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    failures.append((sub_account[0], str(e)))
     else:
         for sub_account in sub_accounts:
-            integrate_sub_account(
-                sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role, org_account_id,
-                response, response_region, response_exclude_runbooks, environment, domain,
-                eks_audit_logs, eks_audit_logs_regions
-            )
+            try:
+                integrate_sub_account(
+                    sub_account, sts_client, graph_client, regions, random_int,
+                    custom_tags, regions_to_integrate, control_role, org_account_id,
+                    parallel, response, response_region, response_exclude_runbooks, environment, domain,
+                    eks_audit_logs, eks_audit_logs_regions
+                )
+            except Exception as e:
+                failures.append((sub_account[0], str(e)))
+
+    if failures:
+        print(color(f"Integration finished with {len(failures)} failure(s):", "red"))
+        for account_id, msg in failures:
+            print(color(f"  {account_id}: {msg}", "red"))
+        raise Exception(f"{len(failures)} account(s) failed to integrate")
 
     print("Integration finished successfully!")
 
@@ -97,10 +123,16 @@ def integrate_sub_account(
         if sub_account[0] == org_account_id:
             sub_account_session = boto3.Session()
         else:
-            assumed_role = sts_client.assume_role(
-                RoleArn=f'arn:aws:iam::{sub_account[0]}:role/{control_role}',
-                RoleSessionName='MySessionName'
-            )
+            role_arn = f'arn:aws:iam::{sub_account[0]}:role/{control_role}'
+            try:
+                assumed_role = sts_client.assume_role(
+                    RoleArn=role_arn,
+                    RoleSessionName='MySessionName'
+                )
+            except ClientError as e:
+                err_msg = f"Account: {sub_account[0]} | Failed to assume {role_arn}: {e}"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg) from e
             print(color(f"Account: {sub_account[0]} | Initializing Boto session", "blue"))
             sub_account_session = boto3.Session(
                 aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
@@ -172,8 +204,11 @@ def integrate_sub_account(
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
             print(color(f"Account: {sub_account[0]} | Creating account in StreamSecurity", "blue"))
-            graph_client.create_account(
-                sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
+            if not graph_client.create_account(
+                    sub_account[0], [sub_account_session.region_name], display_name=sub_account[1]):
+                err_msg = f"Account: {sub_account[0]} | Failed to create account in StreamSecurity"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg)
             print(color(f"Account: {sub_account[0]} | Account created successfully", "green"))
 
         print(color(f"Account: {sub_account[0]} | Fetching relevant account information", "blue"))
