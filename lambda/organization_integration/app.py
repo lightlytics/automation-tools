@@ -8,26 +8,6 @@ from src.python.common.boto_common import *
 from src.python.common.graph_common import GraphCommon
 
 
-class GraphCommonToken(GraphCommon):
-    """GraphCommon variant authenticated with a long-lived API token.
-
-    Bypasses the email/password login in the base __init__ so no Login mutation
-    is issued. If the token is ever rejected, graph_query's auto-refresh branch
-    will fail fast since email/pw are None — that's intentional: with an API
-    token there's nothing to refresh to.
-
-    Maintenance note: this class deliberately does NOT call super().__init__().
-    If GraphCommon.__init__ ever adds non-login setup (e.g. a shared session,
-    default headers, retry config), mirror that setup here.
-    """
-    def __init__(self, url, api_token, customer_id=None):
-        self.url = url
-        self.email = None
-        self.pw = None
-        self.token = api_token if api_token.startswith("Bearer ") else f"Bearer {api_token}"
-        self.customer_id = customer_id or self.get_customer_id()
-
-
 def lambda_handler(event, context):
     # Extract parameters from environment variables
     environment = os.environ.get('ENVIRONMENT')
@@ -65,7 +45,7 @@ def lambda_handler(event, context):
     print(f"Trying to login into Stream Security environment: {environment}")
     ll_url = f"https://{environment}.{domain}/graphql"
     if ll_api_token:
-        graph_client = GraphCommonToken(ll_url, ll_api_token, ws_id)
+        graph_client = GraphCommon(ll_url, token=ll_api_token, customer_id=ws_id)
     elif ll_username and ll_password:
         graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
     else:
