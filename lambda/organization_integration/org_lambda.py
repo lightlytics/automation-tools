@@ -244,6 +244,9 @@ def main():
     print("Setup completed successfully!")
 
     if args.invoke_after_deploy:
+        print("Waiting for Lambda to become active...")
+        waiter = lambda_client.get_waiter('function_active_v2')
+        waiter.wait(FunctionName=function_name)
         print("Invoking the Lambda asynchronously to onboard existing accounts...")
         lambda_client.invoke(
             FunctionName=function_name,
