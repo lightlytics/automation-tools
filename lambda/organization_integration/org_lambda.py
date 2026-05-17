@@ -23,6 +23,7 @@ parser.add_argument("--response-exclude-runbooks", help="Comma separated list of
 parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creation of the EKS audit logs.")
 parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
 parser.add_argument("--invoke-after-deploy", action="store_true", help="Invoke the Lambda asynchronously after deploy to onboard existing accounts immediately.")
+parser.add_argument("--schedule-scan-days", type=int, required=False, help="Create a scheduled EventBridge rule to invoke the Lambda every X days (e.g. 1 for daily). Useful for syncing account name changes and other drift.")
 args = parser.parse_args()
 
 # Apply AWS profile before creating any boto3 clients. If not set, boto3 falls
@@ -213,12 +214,12 @@ def main():
             "AWS API Call via CloudTrail",
             "AWS Service Event via CloudTrail",
         ],
-        "detail": {"eventName": ["CreateAccountResult"]}
+        "detail": {"eventName": ["CreateAccountResult", "RenameAccount"]}
     }
     events_client.put_rule(
         Name=rule_name,
         EventPattern=json.dumps(event_pattern),
-        Description="Rule to trigger Lambda when a new AWS account is created"
+        Description="Rule to trigger Lambda when a new AWS account is created or renamed"
     )
 
     # Add permission for EventBridge to invoke Lambda
@@ -240,6 +241,33 @@ def main():
             }
         ]
     )
+
+    # Create scheduled EventBridge rule if --schedule-scan-days is set
+    if args.schedule_scan_days:
+        scheduled_rule_name = "streamsec-organization-scheduled-scan"
+        schedule_expr = f"rate({args.schedule_scan_days} day)" if args.schedule_scan_days == 1 else f"rate({args.schedule_scan_days} days)"
+        events_client.put_rule(
+            Name=scheduled_rule_name,
+            ScheduleExpression=schedule_expr,
+            Description=f"Scheduled rule to invoke the organization Lambda every {args.schedule_scan_days} day(s)"
+        )
+        lambda_client.add_permission(
+            FunctionName=function_name,
+            StatementId="ScheduledScanInvokeLambda",
+            Action="lambda:InvokeFunction",
+            Principal="events.amazonaws.com",
+            SourceArn=f"arn:aws:events:{region}:{aws_account_id}:rule/{scheduled_rule_name}"
+        )
+        events_client.put_targets(
+            Rule=scheduled_rule_name,
+            Targets=[
+                {
+                    "Id": "1",
+                    "Arn": f"arn:aws:lambda:{region}:{aws_account_id}:function:{function_name}"
+                }
+            ]
+        )
+        print(f"Scheduled scan rule created: runs every {args.schedule_scan_days} day(s)")
 
     print("Setup completed successfully!")
 
@@ -286,6 +314,15 @@ def cleanup():
         events_client.delete_rule(Name="streamsec-organization-newaccount-rule")
     except events_client.exceptions.ResourceNotFoundException:
         print("EventBridge rule not found.")
+        pass
+
+    try:
+        # Delete the scheduled scan rule
+        print("Deleting the scheduled scan rule...")
+        events_client.remove_targets(Rule="streamsec-organization-scheduled-scan", Ids=["1"])
+        events_client.delete_rule(Name="streamsec-organization-scheduled-scan")
+    except events_client.exceptions.ResourceNotFoundException:
+        print("Scheduled scan rule not found.")
         pass
     
     try:
