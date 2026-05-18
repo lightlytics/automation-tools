@@ -214,12 +214,12 @@ def main():
             "AWS API Call via CloudTrail",
             "AWS Service Event via CloudTrail",
         ],
-        "detail": {"eventName": ["CreateAccountResult", "RenameAccount"]}
+        "detail": {"eventName": ["CreateAccountResult"]}
     }
     events_client.put_rule(
         Name=rule_name,
         EventPattern=json.dumps(event_pattern),
-        Description="Rule to trigger Lambda when a new AWS account is created or renamed"
+        Description="Rule to trigger Lambda when a new AWS account is created"
     )
 
     # Add permission for EventBridge to invoke Lambda
@@ -242,8 +242,14 @@ def main():
         ]
     )
 
-    # Create scheduled EventBridge rule if --schedule-scan-days is set
+    # Create scheduled EventBridge rule if --schedule-scan-days is set.
+    # A scheduled scan is the only way to detect account name changes, because
+    # the PutAccountName CloudTrail event only appears in the member account's
+    # trail, not the management account where this EventBridge rule lives.
     if args.schedule_scan_days:
+        if args.schedule_scan_days <= 0:
+            print("Error: --schedule-scan-days must be a positive integer.")
+            return
         scheduled_rule_name = "streamsec-organization-scheduled-scan"
         schedule_expr = f"rate({args.schedule_scan_days} day)" if args.schedule_scan_days == 1 else f"rate({args.schedule_scan_days} days)"
         events_client.put_rule(
@@ -251,13 +257,16 @@ def main():
             ScheduleExpression=schedule_expr,
             Description=f"Scheduled rule to invoke the organization Lambda every {args.schedule_scan_days} day(s)"
         )
-        lambda_client.add_permission(
-            FunctionName=function_name,
-            StatementId="ScheduledScanInvokeLambda",
-            Action="lambda:InvokeFunction",
-            Principal="events.amazonaws.com",
-            SourceArn=f"arn:aws:events:{region}:{aws_account_id}:rule/{scheduled_rule_name}"
-        )
+        try:
+            lambda_client.add_permission(
+                FunctionName=function_name,
+                StatementId="ScheduledScanInvokeLambda",
+                Action="lambda:InvokeFunction",
+                Principal="events.amazonaws.com",
+                SourceArn=f"arn:aws:events:{region}:{aws_account_id}:rule/{scheduled_rule_name}"
+            )
+        except lambda_client.exceptions.ResourceConflictException:
+            pass
         events_client.put_targets(
             Rule=scheduled_rule_name,
             Targets=[
@@ -323,6 +332,12 @@ def cleanup():
         events_client.delete_rule(Name="streamsec-organization-scheduled-scan")
     except events_client.exceptions.ResourceNotFoundException:
         print("Scheduled scan rule not found.")
+        pass
+
+    try:
+        print("Removing scheduled scan Lambda permission...")
+        lambda_client.remove_permission(FunctionName="streamsec-organization-lambda", StatementId="ScheduledScanInvokeLambda")
+    except lambda_client.exceptions.ResourceNotFoundException:
         pass
     
     try:
