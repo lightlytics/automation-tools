@@ -308,14 +308,22 @@ def cleanup():
     iam_client, sts_client, lambda_client, events_client = _aws_clients()
     aws_account_id = sts_client.get_caller_identity()['Account']
 
+    function_name = "streamsec-organization-lambda"
+
+    try:
+        print("Removing scheduled scan Lambda permission...")
+        lambda_client.remove_permission(FunctionName=function_name, StatementId="ScheduledScanInvokeLambda")
+    except lambda_client.exceptions.ResourceNotFoundException:
+        pass
+
     try:
         # Delete the Lambda function
         print("Deleting the Lambda function...")
-        lambda_client.delete_function(FunctionName="streamsec-organization-lambda")
+        lambda_client.delete_function(FunctionName=function_name)
     except lambda_client.exceptions.ResourceNotFoundException:
         print("Lambda function not found.")
         pass
-    
+
     try:
         # Delete the EventBridge rule
         print("Deleting the EventBridge rule...")
@@ -332,12 +340,6 @@ def cleanup():
         events_client.delete_rule(Name="streamsec-organization-scheduled-scan")
     except events_client.exceptions.ResourceNotFoundException:
         print("Scheduled scan rule not found.")
-        pass
-
-    try:
-        print("Removing scheduled scan Lambda permission...")
-        lambda_client.remove_permission(FunctionName="streamsec-organization-lambda", StatementId="ScheduledScanInvokeLambda")
-    except lambda_client.exceptions.ResourceNotFoundException:
         pass
     
     try:
