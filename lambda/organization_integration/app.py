@@ -151,6 +151,16 @@ def integrate_sub_account(
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
             elif sub_account_information["status"] == "READY":
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
+                # Check if account name has changed in AWS Organizations
+                current_display_name = sub_account_information.get("display_name", "")
+                aws_account_name = sub_account[1]  # Account name from AWS Organizations
+                if aws_account_name and current_display_name != aws_account_name:
+                    try:
+                        print(color(f"Account: {sub_account[0]} | Display name changed from '{current_display_name}' to '{aws_account_name}', updating", "blue"))
+                        graph_client.update_account_display_name(sub_account[0], aws_account_name)
+                        print(color(f"Account: {sub_account[0]} | Display name updated successfully", "green"))
+                    except Exception as e:
+                        print(color(f"Account: {sub_account[0]} | Failed to update display name: {e}", "red"))
                 # Response stack logic for READY state
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
                 if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:

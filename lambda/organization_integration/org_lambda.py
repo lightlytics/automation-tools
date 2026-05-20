@@ -23,6 +23,7 @@ parser.add_argument("--response-exclude-runbooks", help="Comma separated list of
 parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creation of the EKS audit logs.")
 parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
 parser.add_argument("--invoke-after-deploy", action="store_true", help="Invoke the Lambda asynchronously after deploy to onboard existing accounts immediately.")
+parser.add_argument("--schedule-scan-days", type=int, required=False, help="Create a scheduled EventBridge rule to invoke the Lambda every X days (e.g. 1 for daily). Useful for syncing account name changes and other drift.")
 args = parser.parse_args()
 
 # Apply AWS profile before creating any boto3 clients. If not set, boto3 falls
@@ -241,6 +242,42 @@ def main():
         ]
     )
 
+    # Create scheduled EventBridge rule if --schedule-scan-days is set.
+    # A scheduled scan is the only way to detect account name changes, because
+    # the PutAccountName CloudTrail event only appears in the member account's
+    # trail, not the management account where this EventBridge rule lives.
+    if args.schedule_scan_days:
+        if args.schedule_scan_days <= 0:
+            print("Error: --schedule-scan-days must be a positive integer.")
+            return
+        scheduled_rule_name = "streamsec-organization-scheduled-scan"
+        schedule_expr = f"rate({args.schedule_scan_days} day)" if args.schedule_scan_days == 1 else f"rate({args.schedule_scan_days} days)"
+        events_client.put_rule(
+            Name=scheduled_rule_name,
+            ScheduleExpression=schedule_expr,
+            Description=f"Scheduled rule to invoke the organization Lambda every {args.schedule_scan_days} day(s)"
+        )
+        try:
+            lambda_client.add_permission(
+                FunctionName=function_name,
+                StatementId="ScheduledScanInvokeLambda",
+                Action="lambda:InvokeFunction",
+                Principal="events.amazonaws.com",
+                SourceArn=f"arn:aws:events:{region}:{aws_account_id}:rule/{scheduled_rule_name}"
+            )
+        except lambda_client.exceptions.ResourceConflictException:
+            pass
+        events_client.put_targets(
+            Rule=scheduled_rule_name,
+            Targets=[
+                {
+                    "Id": "1",
+                    "Arn": f"arn:aws:lambda:{region}:{aws_account_id}:function:{function_name}"
+                }
+            ]
+        )
+        print(f"Scheduled scan rule created: runs every {args.schedule_scan_days} day(s)")
+
     print("Setup completed successfully!")
 
     if args.invoke_after_deploy:
@@ -271,14 +308,22 @@ def cleanup():
     iam_client, sts_client, lambda_client, events_client = _aws_clients()
     aws_account_id = sts_client.get_caller_identity()['Account']
 
+    function_name = "streamsec-organization-lambda"
+
+    try:
+        print("Removing scheduled scan Lambda permission...")
+        lambda_client.remove_permission(FunctionName=function_name, StatementId="ScheduledScanInvokeLambda")
+    except lambda_client.exceptions.ResourceNotFoundException:
+        pass
+
     try:
         # Delete the Lambda function
         print("Deleting the Lambda function...")
-        lambda_client.delete_function(FunctionName="streamsec-organization-lambda")
+        lambda_client.delete_function(FunctionName=function_name)
     except lambda_client.exceptions.ResourceNotFoundException:
         print("Lambda function not found.")
         pass
-    
+
     try:
         # Delete the EventBridge rule
         print("Deleting the EventBridge rule...")
@@ -286,6 +331,15 @@ def cleanup():
         events_client.delete_rule(Name="streamsec-organization-newaccount-rule")
     except events_client.exceptions.ResourceNotFoundException:
         print("EventBridge rule not found.")
+        pass
+
+    try:
+        # Delete the scheduled scan rule
+        print("Deleting the scheduled scan rule...")
+        events_client.remove_targets(Rule="streamsec-organization-scheduled-scan", Ids=["1"])
+        events_client.delete_rule(Name="streamsec-organization-scheduled-scan")
+    except events_client.exceptions.ResourceNotFoundException:
+        print("Scheduled scan rule not found.")
         pass
     
     try:
