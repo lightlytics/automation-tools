@@ -17,18 +17,18 @@ except ModuleNotFoundError:
 
 
 def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, parallel,
-         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole", response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None):
-    
+         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole", response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None, api_token=None):
+
     try:
-        # Check for required parameters
         if not environment_url:
             raise ValueError("The environment URL is required.")
-        if not ll_username:
-            raise ValueError("The StreamSecurity environment user name is required.")
-        if not ll_password:
-            raise ValueError("The StreamSecurity environment password is required.")
-        if not aws_profile_name:
-            raise ValueError("The AWS profile name is required.")
+        if not api_token:
+            if not ll_username:
+                raise ValueError("Either --api_token, or both --environment_user_name and --environment_password, must be provided.")
+            if not ll_password:
+                raise ValueError("Either --api_token, or both --environment_user_name and --environment_password, must be provided.")
+        if api_token and not ws_id:
+            raise ValueError("--ws_id is required when using --api_token.")
     except Exception as e:
         print(color(f"Error: {e}", "red"))
         return
@@ -46,6 +46,9 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     if regions_to_integrate:
         regions_to_integrate = regions_to_integrate.split(",")
 
+    if eks_audit_logs_regions:
+        eks_audit_logs_regions = eks_audit_logs_regions.split(",")
+
     print(color("Trying to login into Stream Security", "blue"))
     try:
         parsed_url = urlparse(environment_url)
@@ -56,7 +59,10 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
         else:
             raise ValueError("The environment should be a valid URL or a subdomain.")
         print(color(f"Stream Security URL: {ll_url}", "blue"))
-        graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
+        if api_token:
+            graph_client = GraphCommon(ll_url, token=api_token, customer_id=ws_id)
+        else:
+            graph_client = GraphCommon(ll_url, ll_username, ll_password, ws_id)
         print(color("Logged in successfully!", "green"))
     except Exception as e:
         print(color(f"Error: {e}", "red"))
@@ -64,8 +70,11 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     
     try:
         print(color("Creating Boto3 Session", "blue"))
-        # Set the AWS_PROFILE environment variable
-        os.environ['AWS_PROFILE'] = aws_profile_name
+        if aws_profile_name:
+            os.environ['AWS_PROFILE'] = aws_profile_name
+            print(color(f"Using AWS profile: {aws_profile_name}", "blue"))
+        else:
+            print(color("No AWS profile specified, using default credential chain", "blue"))
         # Set up the Organizations client
         org_client = boto3.client('organizations')
 
@@ -98,24 +107,38 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
         print("Operation canceled.")
         return
 
+    failures = []
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            # Submit tasks to the thread pool
-            results = [executor.submit(
-                integrate_sub_account,
-                environment_url, sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                control_role, org_account_id, parallel, response, response_region, response_exclude_runbooks, eks_audit_logs, eks_audit_logs_regions
-            ) for sub_account in sub_accounts]
-            # Wait for all tasks to complete
-            concurrent.futures.wait(results)
+            future_to_account = {
+                executor.submit(
+                    integrate_sub_account,
+                    environment_url, sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
+                    control_role, org_account_id, parallel, response, response_region, response_exclude_runbooks, eks_audit_logs, eks_audit_logs_regions
+                ): sub_account for sub_account in sub_accounts
+            }
+            for future in concurrent.futures.as_completed(future_to_account):
+                sub_account = future_to_account[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    failures.append((sub_account[0], str(e)))
     else:
         for sub_account in sub_accounts:
-            integrate_sub_account(
-                sub_account, sts_client, graph_client, regions, random_int,
-                custom_tags, regions_to_integrate, control_role, org_account_id, response=response, response_region=response_region, response_exclude_runbooks=response_exclude_runbooks,
-                environment_url=environment_url, eks_audit_logs=eks_audit_logs, eks_audit_logs_regions=eks_audit_logs_regions)
+            try:
+                integrate_sub_account(
+                    environment_url, sub_account, sts_client, graph_client, regions, random_int,
+                    custom_tags, regions_to_integrate, control_role, org_account_id, response=response, response_region=response_region, response_exclude_runbooks=response_exclude_runbooks,
+                    eks_audit_logs=eks_audit_logs, eks_audit_logs_regions=eks_audit_logs_regions)
+            except Exception as e:
+                failures.append((sub_account[0], str(e)))
 
-    print(color("Integration finished successfully!", "green"))
+    if failures:
+        print(color(f"Integration finished with {len(failures)} failure(s):", "red"))
+        for account_id, msg in failures:
+            print(color(f"  {account_id}: {msg}", "red"))
+    else:
+        print(color("Integration finished successfully!", "green"))
 
 
 def integrate_sub_account(
@@ -152,7 +175,8 @@ def integrate_sub_account(
                 
                 # Deploying response stack if enabled
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
-                if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:
+                remediation = response_info.get("remediation")
+                if (remediation is None or remediation.get("status") is None) and response:
                     deploy_response_stack(
                         environment_url ,sub_account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
                 
@@ -204,8 +228,11 @@ def integrate_sub_account(
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
             print(color(f"Account: {sub_account[0]} | Creating account in StreamSecurity", "blue"))
-            graph_client.create_account(
-                sub_account[0], [sub_account_session.region_name], display_name=sub_account[1])
+            if not graph_client.create_account(
+                    sub_account[0], [sub_account_session.region_name], display_name=sub_account[1]):
+                err_msg = f"Account: {sub_account[0]} | Failed to create account in StreamSecurity"
+                print(color(err_msg, "red"))
+                raise Exception(err_msg)
             print(color(f"Account: {sub_account[0]} | Account created successfully", "green"))
 
         print(color(f"Account: {sub_account[0]} | Fetching relevant account information", "blue"))
@@ -291,12 +318,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--environment_url", help="The StreamSecurity environment URL", required=True)
     parser.add_argument(
-        "--environment_user_name", help="The StreamSecurity environment user name", required=True)
+        "--api_token", help="Stream Security API token. If set, --environment_user_name and --environment_password are not required.", required=False)
     parser.add_argument(
-        "--environment_password", help="The StreamSecurity environment password", required=True)
+        "--environment_user_name", help="The StreamSecurity environment user name. Ignored if --api_token is provided.", required=False)
     parser.add_argument(
-        "--aws_profile_name", help="The AWS profile with admin permissions for the organization account",
-        default="staging")
+        "--environment_password", help="The StreamSecurity environment password. Ignored if --api_token is provided.", required=False)
+    parser.add_argument(
+        "--aws_profile_name", help="AWS profile name to use. If omitted, the default credential chain (env vars, SSO session, instance role, etc.) is used.",
+        default=None)
     parser.add_argument(
         "--accounts", help="Accounts list to iterate when creating the report (e.g '123123123123,321321321321')",
         required=False)
@@ -327,4 +356,4 @@ if __name__ == "__main__":
          args.aws_profile_name, args.accounts, args.parallel,
          ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
          control_role=args.control_role, response=args.response, response_region=args.response_region, response_exclude_runbooks=args.response_exclude_runbooks,
-         eks_audit_logs=args.eks_audit_logs, eks_audit_logs_regions=args.eks_audit_logs_regions)
+         eks_audit_logs=args.eks_audit_logs, eks_audit_logs_regions=args.eks_audit_logs_regions, api_token=args.api_token)
