@@ -128,10 +128,13 @@ class GraphCommon(object):
                 "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
         result = self.graph_query(operation, {}, query)
-        if not isinstance(result, dict):
+        accounts = (result.get('data') or {}).get('accounts') if isinstance(result, dict) else None
+        if not accounts:
+            if not getattr(self, "_warned_empty_accounts", False):
+                print(f"Warning: empty/invalid accounts response from {self.url}; treating as no accounts.")
+                self._warned_empty_accounts = True
             return []
-        accounts = (result.get('data') or {}).get('accounts')
-        return accounts or []
+        return accounts
 
     def get_account_response_config(self, cloud_account_id):
         """ Get all accounts.

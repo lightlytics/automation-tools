@@ -22,13 +22,14 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     try:
         if not environment_url:
             raise ValueError("The environment URL is required.")
-        if not api_token:
+        if api_token:
+            if not ws_id:
+                raise ValueError("--ws_id is required when using --api_token.")
+        else:
             if not ll_username:
-                raise ValueError("Either --api_token, or both --environment_user_name and --environment_password, must be provided.")
+                raise ValueError("--environment_user_name is required (or use --api_token instead).")
             if not ll_password:
-                raise ValueError("Either --api_token, or both --environment_user_name and --environment_password, must be provided.")
-        if api_token and not ws_id:
-            raise ValueError("--ws_id is required when using --api_token.")
+                raise ValueError("--environment_password is required (or use --api_token instead).")
     except Exception as e:
         print(color(f"Error: {e}", "red"))
         return
@@ -113,6 +114,9 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     failures = []
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+            # `parallel` is passed positionally on purpose: integrate_sub_account uses
+            # `not parallel` to skip per-account blocking waits in parallel mode (the
+            # sequential path below omits it -> defaults to False -> waits per account).
             future_to_account = {
                 executor.submit(
                     integrate_sub_account,
@@ -122,19 +126,21 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
             }
             for future in concurrent.futures.as_completed(future_to_account):
                 sub_account = future_to_account[future]
+                account_id = sub_account[0]
                 try:
                     future.result()
                 except Exception as e:
-                    failures.append((sub_account[0], str(e)))
+                    failures.append((account_id, str(e)))
     else:
         for sub_account in sub_accounts:
+            account_id = sub_account[0]
             try:
                 integrate_sub_account(
                     environment_url, sub_account, sts_client, graph_client, regions, random_int,
                     custom_tags, regions_to_integrate, control_role, org_account_id, response=response, response_region=response_region, response_exclude_runbooks=response_exclude_runbooks,
                     eks_audit_logs=eks_audit_logs, eks_audit_logs_regions=eks_audit_logs_regions)
             except Exception as e:
-                failures.append((sub_account[0], str(e)))
+                failures.append((account_id, str(e)))
 
     if failures:
         print(color(f"Integration finished with {len(failures)} failure(s):", "red"))
