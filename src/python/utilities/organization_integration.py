@@ -32,7 +32,10 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     except Exception as e:
         print(color(f"Error: {e}", "red"))
         return
-    
+
+    if not ws_id:
+        print(color("Warning: --ws_id not set; using the first workspace returned by the API.", "yellow"))
+
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
     if accounts:
