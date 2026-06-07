@@ -195,7 +195,16 @@ class GraphCommon(object):
             :returns (str)          - Integration status.
         """
         accounts = self.get_accounts()
-        specific_account = next(account for account in accounts if account["cloud_account_id"] == account_id)
+        if not accounts:
+            raise Exception(
+                f"Stream Security API returned no accounts while checking status for {account_id} "
+                f"(likely a transient/null API response). The integration may have succeeded - "
+                f"verify in the UI and re-run for this account if needed.")
+        specific_account = next(
+            (account for account in accounts if account["cloud_account_id"] == account_id), None)
+        if specific_account is None:
+            raise Exception(
+                f"Account {account_id} was not found in Stream Security while polling its status.")
         return specific_account["status"]
 
     def wait_for_account_connection(self, account, timeout=600):
