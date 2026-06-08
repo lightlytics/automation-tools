@@ -48,10 +48,10 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
 
     # Prepare regions if provided
     if regions_to_integrate:
-        regions_to_integrate = regions_to_integrate.split(",")
+        regions_to_integrate = [r.strip() for r in regions_to_integrate.split(",") if r.strip()]
 
     if eks_audit_logs_regions:
-        eks_audit_logs_regions = eks_audit_logs_regions.split(",")
+        eks_audit_logs_regions = [r.strip() for r in eks_audit_logs_regions.split(",") if r.strip()]
 
     print(color("Trying to login into Stream Security", "blue"))
     try:

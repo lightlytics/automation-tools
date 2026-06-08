@@ -128,10 +128,13 @@ class GraphCommon(object):
                 "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
         result = self.graph_query(operation, {}, query)
-        accounts = (result.get('data') or {}).get('accounts') if isinstance(result, dict) else None
-        if not accounts:
+        # Treat a null/invalid/errored response as "no accounts" (warn once), but return a
+        # genuinely empty list as-is so an environment with zero integrations isn't flagged.
+        accounts = (result.get('data') or {}).get('accounts') \
+            if isinstance(result, dict) and 'errors' not in result else None
+        if accounts is None or not isinstance(accounts, list):
             if not getattr(self, "_warned_empty_accounts", False):
-                print(f"Warning: empty/invalid accounts response from {self.url}; treating as no accounts.")
+                print(f"Warning: null/invalid accounts response from {self.url}; treating as no accounts.")
                 self._warned_empty_accounts = True
             return []
         return accounts
