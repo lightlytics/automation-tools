@@ -127,7 +127,17 @@ class GraphCommon(object):
                 "template_version __typename}vpc_flow_logs{flow_logs_token should_collect_flow_logs __typename} " \
                 "lightlytics_collection_token stack_region account_aliases cost{status details operation " \
                 "template_version role_arn bucket_arn cur_prefix last_timestamp __typename}__typename}}"
-        return self.graph_query(operation, {}, query)['data']['accounts']
+        result = self.graph_query(operation, {}, query)
+        # Treat a null/invalid/errored response as "no accounts" (warn once), but return a
+        # genuinely empty list as-is so an environment with zero integrations isn't flagged.
+        accounts = (result.get('data') or {}).get('accounts') \
+            if isinstance(result, dict) and 'errors' not in result else None
+        if accounts is None or not isinstance(accounts, list):
+            if not getattr(self, "_warned_empty_accounts", False):
+                print(f"Warning: null/invalid accounts response from {self.url}; treating as no accounts.")
+                self._warned_empty_accounts = True
+            return []
+        return accounts
 
     def get_account_response_config(self, cloud_account_id):
         """ Get all accounts.
@@ -195,7 +205,16 @@ class GraphCommon(object):
             :returns (str)          - Integration status.
         """
         accounts = self.get_accounts()
-        specific_account = next(account for account in accounts if account["cloud_account_id"] == account_id)
+        if not accounts:
+            raise Exception(
+                f"Stream Security API returned no accounts while checking status for {account_id} "
+                f"(likely a transient/null API response). The integration may have succeeded - "
+                f"verify in the UI and re-run for this account if needed.")
+        specific_account = next(
+            (account for account in accounts if account["cloud_account_id"] == account_id), None)
+        if specific_account is None:
+            raise Exception(
+                f"Account {account_id} was not found in Stream Security while polling its status.")
         return specific_account["status"]
 
     def wait_for_account_connection(self, account, timeout=600):
