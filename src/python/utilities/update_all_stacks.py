@@ -265,10 +265,22 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
             rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
             log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
         except Exception as e:
+            # The waiter also fails on timeout, so re-check the actual status
+            # before recording: the rollback may have completed just after the
+            # last poll (same re-check pattern as the update waiter below).
+            try:
+                final_status = cfn_client.describe_stacks(
+                    StackName=rb_stack['StackName'])['Stacks'][0]['StackStatus']
+            except Exception:
+                final_status = "UNKNOWN"
+            if final_status == 'UPDATE_ROLLBACK_COMPLETE':
+                rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
+                log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
+                continue
             log_with_color(f"Failed to rollback stack {rb_stack['StackName']}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
             record_result(sub_account, region, rb_stack['StackName'], "failed",
-                          f"rollback did not complete: {str(e)}"[:200])
+                          f"rollback did not complete (status {final_status}): {str(e)}"[:200])
 
     # Filter the list of stacks for update (stacks successfully rolled back
     # above had their cached status corrected, so they are included here)
@@ -355,9 +367,10 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, s
             final_status = cfn_client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
         except Exception:
             final_status = "UNKNOWN"
-        if final_status == 'UPDATE_COMPLETE':
+        if final_status in ('UPDATE_COMPLETE', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS'):
             # The update finished between the waiter's last poll (or timeout)
-            # and this re-check — it succeeded.
+            # and this re-check — it succeeded. CLEANUP_IN_PROGRESS only occurs
+            # after a successful update, while replaced resources are removed.
             log_with_color(f"Stack {stack_name} update completed successfully", "green")
             record_result(sub_account, region, stack_name, "updated")
             return
