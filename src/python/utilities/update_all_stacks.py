@@ -41,14 +41,19 @@ def print_summary():
     a re-run), which drives the process exit code."""
     counts = collections.Counter(r["outcome"] for r in RUN_RESULTS)
     failed = [r for r in RUN_RESULTS if r["outcome"] == "failed"]
+    rollback_pending = [r for r in RUN_RESULTS if r["outcome"] == "rollback_initiated"]
     log_with_color("=" * 60, "blue")
     log_with_color(
         f"Run summary: {counts['updated']} updated | {counts['initiated']} update initiated (not waited) | "
-        f"{counts['up_to_date']} already up to date | {counts['rollback_initiated']} rollback initiated (not waited) | "
+        f"{counts['up_to_date']} already up to date | {counts['rollback_initiated']} rollback pending | "
         f"{counts['failed']} failed", "blue")
     for r in failed:
         log_with_color(
             f"  FAILED | account {r['account']} | {r['region']} | {r['stack']} | {r['reason']}", "red", "error")
+    for r in rollback_pending:
+        log_with_color(
+            f"  ROLLBACK PENDING | account {r['account']} | {r['region']} | {r['stack']} | "
+            f"re-run once the rollback completes", "yellow", "warning")
     if failed:
         log_with_color(
             "Inspect the failed stacks' events in the CloudFormation console, then re-run for those accounts.",
