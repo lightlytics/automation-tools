@@ -35,10 +35,11 @@ def record_result(account, region, stack_name, outcome, reason=""):
 
 
 def print_summary():
-    """Print counts for all outcomes and details only for failures, so the
-    summary stays readable on large (250+ account) runs. Returns the number
-    of stacks needing attention (failures plus rollbacks that still require
-    a re-run), which drives the process exit code."""
+    """Print counts for all outcomes, with per-stack detail only for the
+    actionable ones (failures and pending rollbacks), so the summary stays
+    readable on large (250+ account) runs. Returns the number of stacks
+    needing attention (failures plus rollbacks that still require a re-run),
+    which drives the process exit code."""
     counts = collections.Counter(r["outcome"] for r in RUN_RESULTS)
     failed = [r for r in RUN_RESULTS if r["outcome"] == "failed"]
     rollback_pending = [r for r in RUN_RESULTS if r["outcome"] == "rollback_initiated"]
@@ -52,8 +53,7 @@ def print_summary():
             f"  FAILED | account {r['account']} | {r['region']} | {r['stack']} | {r['reason']}", "red", "error")
     for r in rollback_pending:
         log_with_color(
-            f"  ROLLBACK PENDING | account {r['account']} | {r['region']} | {r['stack']} | "
-            f"re-run once the rollback completes", "yellow", "warning")
+            f"  ROLLBACK PENDING | account {r['account']} | {r['region']} | {r['stack']}", "yellow", "warning")
     if failed:
         log_with_color(
             "Inspect the failed stacks' events in the CloudFormation console, then re-run for those accounts.",
