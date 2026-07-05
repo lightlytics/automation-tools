@@ -1,6 +1,7 @@
 import argparse
 import botocore
 import boto3
+import collections
 import concurrent.futures
 import os
 import sys
@@ -37,13 +38,13 @@ def print_summary():
     """Print counts for all outcomes and details only for failures, so the
     summary stays readable on large (250+ account) runs. Returns the number
     of failures."""
-    counts = {o: sum(1 for r in RUN_RESULTS if r["outcome"] == o)
-              for o in ("updated", "initiated", "up_to_date", "failed")}
+    counts = collections.Counter(r["outcome"] for r in RUN_RESULTS)
     failed = [r for r in RUN_RESULTS if r["outcome"] == "failed"]
     log_with_color("=" * 60, "blue")
     log_with_color(
         f"Run summary: {counts['updated']} updated | {counts['initiated']} update initiated (not waited) | "
-        f"{counts['up_to_date']} already up to date | {counts['failed']} failed", "blue")
+        f"{counts['up_to_date']} already up to date | {counts['rollback_initiated']} rollback initiated (not waited) | "
+        f"{counts['failed']} failed", "blue")
     for r in failed:
         log_with_color(
             f"  FAILED | account {r['account']} | {r['region']} | {r['stack']} | {r['reason']}", "red", "error")
@@ -186,10 +187,12 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                     except Exception as e:
                         log_with_color(f"Error in thread: {str(e)}", "red", "error")
                         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+                        record_result(sub_account, "-", "-", "failed", f"region worker error: {str(e)}"[:200])
 
         except Exception as e:
             log_with_color(f"Error processing account {sub_account}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+            record_result(sub_account, "-", "-", "failed", f"unexpected error: {str(e)}"[:200])
             continue
 
     failed_count = print_summary()
@@ -238,28 +241,34 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     if rollback_stacks:
         log_with_color(f"Stacks requiring rollback: {[stack['StackName'] for stack in rollback_stacks]}", "yellow", "warning")
     
-    rolled_back_names = set()
     for rb_stack in rollback_stacks:
         try:
             log_with_color(f"Rolling back stack: '{rb_stack['StackName']}'", "yellow", "warning")
             cfn_client.continue_update_rollback(StackName=rb_stack['StackName'])
-            if not avoid_waiting:
-                cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack['StackName'])
-                rolled_back_names.add(rb_stack['StackName'])
+            if avoid_waiting:
+                # The rollback runs unattended, so this stack cannot be updated
+                # in this run — surface it in the summary instead of dropping it.
+                log_with_color(f"Rollback of '{rb_stack['StackName']}' initiated (not waiting); "
+                               f"re-run later to update this stack", "yellow", "warning")
+                record_result(sub_account, region, rb_stack['StackName'], "rollback_initiated")
+                continue
+            cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack['StackName'])
+            # The cached summary still shows the pre-rollback status; correct it
+            # so the update filter below picks this stack up.
+            rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
             log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
         except Exception as e:
             log_with_color(f"Failed to rollback stack {rb_stack['StackName']}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
-            record_result(sub_account, region, rb_stack['StackName'], "failed", "continue_update_rollback failed")
+            record_result(sub_account, region, rb_stack['StackName'], "failed",
+                          f"rollback did not complete: {str(e)}"[:200])
 
-    # Filter the list of stacks for update. Stacks whose rollback completed
-    # above are included even though the cached summary still shows the
-    # pre-rollback UPDATE_ROLLBACK_FAILED status.
+    # Filter the list of stacks for update (stacks successfully rolled back
+    # above had their cached status corrected, so they are included here)
     update_stacks = [stack for stack in stacks if
                        ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
                         not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
-               (stack['StackStatus'] in UPDATE_STATUSES or
-                stack['StackName'] in rolled_back_names)) and
+               stack['StackStatus'] in UPDATE_STATUSES) and
               'ParentId' not in stack]
 
     log_with_color(f"Found {len(update_stacks)} stacks eligible for update", "blue")
@@ -333,13 +342,32 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, s
             record_result(sub_account, region, stack_name, "initiated")
 
     except WaiterError:
-        # The update was accepted but did not reach UPDATE_COMPLETE, meaning
-        # CloudFormation rolled it back (e.g. a resource in the stack failed).
-        # The stack is restored to its previous state — no traceback needed.
-        log_with_color(
-            f"Stack {stack_name} in {region}: update did not complete and was rolled back by CloudFormation. "
-            f"Check the stack's events in the CloudFormation console for the failing resource.", "red", "error")
-        record_result(sub_account, region, stack_name, "failed", "update rolled back by CloudFormation")
+        # The waiter gives up on terminal states AND on timeout, so check the
+        # stack's actual status before telling the operator what happened.
+        try:
+            final_status = cfn_client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+        except Exception:
+            final_status = "UNKNOWN"
+        if final_status == 'UPDATE_ROLLBACK_COMPLETE':
+            msg = (f"Stack {stack_name} in {region}: update failed and was rolled back by CloudFormation "
+                   f"(stack restored to its previous state). Check the stack's events in the "
+                   f"CloudFormation console for the failing resource.")
+            reason = "update rolled back by CloudFormation"
+        elif final_status == 'UPDATE_ROLLBACK_FAILED':
+            msg = (f"Stack {stack_name} in {region}: update failed and the rollback also failed — the stack "
+                   f"is stuck in UPDATE_ROLLBACK_FAILED. A re-run will attempt continue_update_rollback, "
+                   f"or fix the blocking resource in the CloudFormation console first.")
+            reason = "update failed and rollback failed (UPDATE_ROLLBACK_FAILED)"
+        elif final_status.endswith('_IN_PROGRESS'):
+            msg = (f"Stack {stack_name} in {region}: timed out waiting but the operation is still running "
+                   f"(status {final_status}) — it may yet finish; check the CloudFormation console later.")
+            reason = f"timed out waiting; stack still {final_status}"
+        else:
+            msg = (f"Stack {stack_name} in {region}: update did not reach UPDATE_COMPLETE "
+                   f"(final status: {final_status}). Check the stack's events in the CloudFormation console.")
+            reason = f"update ended in {final_status}"
+        log_with_color(msg, "red", "error")
+        record_result(sub_account, region, stack_name, "failed", reason)
     except ClientError as e:
         error_code = e.response['Error']['Code']
         error_message = e.response['Error']['Message']
@@ -350,6 +378,7 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, s
             record_result(sub_account, region, stack_name, "up_to_date")
         else:
             log_with_color(f"Failed to update stack {stack_name} in {region}: {error_code} - {error_message}", "red", "error")
+            log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
             record_result(sub_account, region, stack_name, "failed", f"{error_code}: {error_message}"[:200])
     except Exception as e:
         log_with_color(f"Unexpected error updating stack {stack_name}: {str(e)}", "red", "error")
