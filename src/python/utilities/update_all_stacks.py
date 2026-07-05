@@ -37,7 +37,8 @@ def record_result(account, region, stack_name, outcome, reason=""):
 def print_summary():
     """Print counts for all outcomes and details only for failures, so the
     summary stays readable on large (250+ account) runs. Returns the number
-    of failures."""
+    of stacks needing attention (failures plus rollbacks that still require
+    a re-run), which drives the process exit code."""
     counts = collections.Counter(r["outcome"] for r in RUN_RESULTS)
     failed = [r for r in RUN_RESULTS if r["outcome"] == "failed"]
     log_with_color("=" * 60, "blue")
@@ -52,7 +53,12 @@ def print_summary():
         log_with_color(
             "Inspect the failed stacks' events in the CloudFormation console, then re-run for those accounts.",
             "yellow", "warning")
-    return len(failed)
+    if counts['rollback_initiated']:
+        log_with_color(
+            f"{counts['rollback_initiated']} stack(s) had a rollback initiated and were NOT updated "
+            f"(--avoid_waiting) — re-run this script for them once the rollbacks finish.",
+            "yellow", "warning")
+    return len(failed) + counts['rollback_initiated']
 
 def log_with_color(message, color="white", level="info"):
     """Helper function to log messages with color and proper logging level"""
@@ -176,18 +182,19 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                 log_with_color("Including collection stacks in update", "yellow", "warning")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(
+                future_to_region = {executor.submit(
                     update_stack, sub_account_session, region, include_filters, exclude_filters,
-                    sub_account, avoid_waiting, custom_tags) for region in regions]
-                
+                    sub_account, avoid_waiting, custom_tags): region for region in regions}
+
                 # Wait for all futures to complete and handle any exceptions
-                for future in concurrent.futures.as_completed(futures):
+                for future in concurrent.futures.as_completed(future_to_region):
                     try:
                         future.result()
                     except Exception as e:
-                        log_with_color(f"Error in thread: {str(e)}", "red", "error")
+                        failed_region = future_to_region[future]
+                        log_with_color(f"Error in thread for region {failed_region}: {str(e)}", "red", "error")
                         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
-                        record_result(sub_account, "-", "-", "failed", f"region worker error: {str(e)}"[:200])
+                        record_result(sub_account, failed_region, "-", "failed", f"region worker error: {str(e)}"[:200])
 
         except Exception as e:
             log_with_color(f"Error processing account {sub_account}: {str(e)}", "red", "error")
@@ -195,11 +202,11 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
             record_result(sub_account, "-", "-", "failed", f"unexpected error: {str(e)}"[:200])
             continue
 
-    failed_count = print_summary()
+    needs_attention = print_summary()
     end_time = datetime.now()
     duration = end_time - start_time
     log_with_color(f"Stack update process completed in {duration}", "green")
-    return failed_count
+    return needs_attention
 
 
 def update_stack(sub_account_session, region, include_filters, exclude_filters, sub_account, avoid_waiting, custom_tags):
@@ -341,13 +348,19 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, s
             log_with_color(f"Stack {stack_name} update initiated (not waiting for completion)", "yellow", "warning")
             record_result(sub_account, region, stack_name, "initiated")
 
-    except WaiterError:
+    except WaiterError as e:
         # The waiter gives up on terminal states AND on timeout, so check the
         # stack's actual status before telling the operator what happened.
         try:
             final_status = cfn_client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
         except Exception:
             final_status = "UNKNOWN"
+        if final_status == 'UPDATE_COMPLETE':
+            # The update finished between the waiter's last poll (or timeout)
+            # and this re-check — it succeeded.
+            log_with_color(f"Stack {stack_name} update completed successfully", "green")
+            record_result(sub_account, region, stack_name, "updated")
+            return
         if final_status == 'UPDATE_ROLLBACK_COMPLETE':
             msg = (f"Stack {stack_name} in {region}: update failed and was rolled back by CloudFormation "
                    f"(stack restored to its previous state). Check the stack's events in the "
@@ -358,13 +371,22 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, s
                    f"is stuck in UPDATE_ROLLBACK_FAILED. A re-run will attempt continue_update_rollback, "
                    f"or fix the blocking resource in the CloudFormation console first.")
             reason = "update failed and rollback failed (UPDATE_ROLLBACK_FAILED)"
+        elif 'ROLLBACK' in final_status:
+            # UPDATE_ROLLBACK_IN_PROGRESS / _CLEANUP_IN_PROGRESS: the update
+            # already failed and CloudFormation is still reverting it — it can
+            # never finish successfully.
+            msg = (f"Stack {stack_name} in {region}: update failed and CloudFormation is rolling it back "
+                   f"(status {final_status}). Check the stack's events in the CloudFormation console "
+                   f"for the failing resource.")
+            reason = f"update failed; rollback in progress ({final_status})"
         elif final_status.endswith('_IN_PROGRESS'):
-            msg = (f"Stack {stack_name} in {region}: timed out waiting but the operation is still running "
-                   f"(status {final_status}) — it may yet finish; check the CloudFormation console later.")
+            msg = (f"Stack {stack_name} in {region}: gave up waiting but the update is still running "
+                   f"(status {final_status}) — it may yet finish; check the CloudFormation console later. "
+                   f"Waiter reason: {e}")
             reason = f"timed out waiting; stack still {final_status}"
         else:
             msg = (f"Stack {stack_name} in {region}: update did not reach UPDATE_COMPLETE "
-                   f"(final status: {final_status}). Check the stack's events in the CloudFormation console.")
+                   f"(final status: {final_status}). Waiter reason: {e}")
             reason = f"update ended in {final_status}"
         log_with_color(msg, "red", "error")
         record_result(sub_account, region, stack_name, "failed", reason)
@@ -407,7 +429,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_workers", help="Maximum number of concurrent workers for stack updates", type=int, default=5)
     args = parser.parse_args()
-    failed = main(args.aws_profile_name, control_role=args.control_role,
-                  region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags, include_collection_stacks=args.include_collection_stacks, accounts=args.accounts,
-                  max_workers=args.max_workers)
-    sys.exit(1 if failed else 0)
+    needs_attention = main(args.aws_profile_name, control_role=args.control_role,
+                           region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags, include_collection_stacks=args.include_collection_stacks, accounts=args.accounts,
+                           max_workers=args.max_workers)
+    sys.exit(1 if needs_attention else 0)
