@@ -55,8 +55,8 @@ def print_summary():
             "yellow", "warning")
     if counts['rollback_initiated']:
         log_with_color(
-            f"{counts['rollback_initiated']} stack(s) had a rollback initiated and were NOT updated "
-            f"(--avoid_waiting) — re-run this script for them once the rollbacks finish.",
+            f"{counts['rollback_initiated']} stack(s) had a rollback initiated or still finishing and were "
+            f"NOT updated — re-run this script for them once the rollbacks complete.",
             "yellow", "warning")
     return len(failed) + counts['rollback_initiated']
 
@@ -276,6 +276,15 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
             if final_status == 'UPDATE_ROLLBACK_COMPLETE':
                 rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
                 log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
+                continue
+            if final_status in ('UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS'):
+                # The rollback is still finishing (cleanup only occurs after it
+                # effectively succeeded). The stack cannot be updated while
+                # *_IN_PROGRESS, so treat it like an unattended rollback:
+                # surface it and require a re-run instead of a hard failure.
+                log_with_color(f"Rollback of '{rb_stack['StackName']}' still finishing (status {final_status}); "
+                               f"re-run later to update this stack", "yellow", "warning")
+                record_result(sub_account, region, rb_stack['StackName'], "rollback_initiated")
                 continue
             log_with_color(f"Failed to rollback stack {rb_stack['StackName']}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
