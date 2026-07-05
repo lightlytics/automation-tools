@@ -17,6 +17,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Stack statuses this script acts on: UPDATE_STATUSES are eligible for a
+# template update, ROLLBACK_STATUSES first need continue_update_rollback.
+UPDATE_STATUSES = ['CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']
+ROLLBACK_STATUSES = ['UPDATE_ROLLBACK_FAILED']
+
 def log_with_color(message, color="white", level="info"):
     """Helper function to log messages with color and proper logging level"""
     colored_message = termcolor.colored(message, color)
@@ -165,9 +170,14 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     try:
         # Set up a new CloudFormation client for the current region
         cfn_client = sub_account_session.client('cloudformation', region_name=region)
-        # Get the list of stacks in the region
-        stacks = cfn_client.list_stacks()['StackSummaries']
-        log_with_color(f"Retrieved {len(stacks)} total stacks in region {region}", "blue")
+        # Get the list of stacks in the region. Paginate (a single list_stacks
+        # call returns at most 100 summaries) and filter to the statuses this
+        # script acts on — an unfiltered call also returns stacks deleted in
+        # the last 90 days, which can push live stacks past the first page.
+        for page in cfn_client.get_paginator('list_stacks').paginate(
+                StackStatusFilter=UPDATE_STATUSES + ROLLBACK_STATUSES):
+            stacks.extend(page['StackSummaries'])
+        log_with_color(f"Retrieved {len(stacks)} stacks in actionable statuses in region {region}", "blue")
     except Exception as e:
         log_with_color(f"Failed to list stacks in {region}: {str(e)}", "red", "error")
         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
@@ -185,31 +195,34 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     rollback_stacks = [stack for stack in stacks if
                        ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
                         not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
-                        stack['StackStatus'] == 'UPDATE_ROLLBACK_FAILED') and
+                        stack['StackStatus'] in ROLLBACK_STATUSES) and
                        'ParentId' not in stack]
     
     log_with_color(f"Found {len(rollback_stacks)} stacks in need of rollback", "yellow", "warning")
     if rollback_stacks:
         log_with_color(f"Stacks requiring rollback: {[stack['StackName'] for stack in rollback_stacks]}", "yellow", "warning")
     
+    rolled_back_names = set()
     for rb_stack in rollback_stacks:
         try:
             log_with_color(f"Rolling back stack: '{rb_stack['StackName']}'", "yellow", "warning")
             cfn_client.continue_update_rollback(StackName=rb_stack['StackName'])
             if not avoid_waiting:
                 cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack['StackName'])
+                rolled_back_names.add(rb_stack['StackName'])
             log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
         except Exception as e:
             log_with_color(f"Failed to rollback stack {rb_stack['StackName']}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
 
-    # Filter the list of stacks for update
+    # Filter the list of stacks for update. Stacks whose rollback completed
+    # above are included even though the cached summary still shows the
+    # pre-rollback UPDATE_ROLLBACK_FAILED status.
     update_stacks = [stack for stack in stacks if
                        ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
                         not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
-               (stack['StackStatus'] == 'CREATE_COMPLETE' or
-                stack['StackStatus'] == 'UPDATE_COMPLETE' or
-                stack['StackStatus'] == 'UPDATE_ROLLBACK_COMPLETE')) and
+               (stack['StackStatus'] in UPDATE_STATUSES or
+                stack['StackName'] in rolled_back_names)) and
               'ParentId' not in stack]
 
     log_with_color(f"Found {len(update_stacks)} stacks eligible for update", "blue")
