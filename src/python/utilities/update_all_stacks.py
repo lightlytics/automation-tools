@@ -1,12 +1,14 @@
 import argparse
 import botocore
 import boto3
+import collections
 import concurrent.futures
 import os
+import sys
 import termcolor
 import traceback
 import logging
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, WaiterError
 from datetime import datetime
 
 # Configure logging
@@ -16,6 +18,52 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+# Stack statuses this script acts on: UPDATE_STATUSES are eligible for a
+# template update, ROLLBACK_STATUSES first need continue_update_rollback.
+UPDATE_STATUSES = ['CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']
+ROLLBACK_STATUSES = ['UPDATE_ROLLBACK_FAILED']
+
+# Per-stack outcomes collected during the run for the end-of-run summary
+# (list.append is atomic under CPython, so worker threads record directly).
+RUN_RESULTS = []
+
+
+def record_result(account, region, stack_name, outcome, reason=""):
+    RUN_RESULTS.append({"account": account, "region": region,
+                        "stack": stack_name, "outcome": outcome, "reason": reason})
+
+
+def print_summary():
+    """Print counts for all outcomes, with per-stack detail only for the
+    actionable ones (failures and pending rollbacks), so the summary stays
+    readable on large (250+ account) runs. Returns the number of stacks
+    needing attention (failures plus rollbacks that still require a re-run),
+    which drives the process exit code."""
+    counts = collections.Counter(r["outcome"] for r in RUN_RESULTS)
+    failed = [r for r in RUN_RESULTS if r["outcome"] == "failed"]
+    rollback_pending = [r for r in RUN_RESULTS if r["outcome"] == "rollback_initiated"]
+    log_with_color("=" * 60, "blue")
+    log_with_color(
+        f"Run summary: {counts['updated']} updated | {counts['initiated']} update initiated (not waited) | "
+        f"{counts['up_to_date']} already up to date | {counts['rollback_initiated']} rollback pending | "
+        f"{counts['failed']} failed", "blue")
+    for r in failed:
+        log_with_color(
+            f"  FAILED | account {r['account']} | {r['region']} | {r['stack']} | {r['reason']}", "red", "error")
+    for r in rollback_pending:
+        log_with_color(
+            f"  ROLLBACK PENDING | account {r['account']} | {r['region']} | {r['stack']}", "yellow", "warning")
+    if failed:
+        log_with_color(
+            "Inspect the failed stacks' events in the CloudFormation console, then re-run for those accounts.",
+            "yellow", "warning")
+    if counts['rollback_initiated']:
+        log_with_color(
+            f"{counts['rollback_initiated']} stack(s) had a rollback initiated or still finishing and were "
+            f"NOT updated — re-run this script for them once the rollbacks complete.",
+            "yellow", "warning")
+    return len(failed) + counts['rollback_initiated']
 
 def log_with_color(message, color="white", level="info"):
     """Helper function to log messages with color and proper logging level"""
@@ -115,6 +163,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                     log_with_color(f"Successfully assumed role for account {sub_account}", "green")
                 except ClientError as e:
                     log_with_color(f"Failed to assume role for account {sub_account}: {str(e)}", "red", "error")
+                    record_result(sub_account, "-", "-", "failed", "could not assume control role")
                     continue
 
             if region:
@@ -128,6 +177,7 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                     log_with_color(f"Retrieved {len(regions)} regions for account {sub_account}", "blue")
                 except Exception as e:
                     log_with_color(f"Failed to get regions for account {sub_account}: {str(e)}", "red", "error")
+                    record_result(sub_account, "-", "-", "failed", "could not list regions")
                     continue
 
             include_filters = ["-streamsec-", "-lightlytics-", "LightlyticsStack-", "LightlyticsCostModule"]
@@ -137,26 +187,31 @@ def main(aws_profile_name, control_role="OrganizationAccountAccessRole",
                 log_with_color("Including collection stacks in update", "yellow", "warning")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(
+                future_to_region = {executor.submit(
                     update_stack, sub_account_session, region, include_filters, exclude_filters,
-                    sub_account, avoid_waiting, custom_tags) for region in regions]
-                
+                    sub_account, avoid_waiting, custom_tags): region for region in regions}
+
                 # Wait for all futures to complete and handle any exceptions
-                for future in concurrent.futures.as_completed(futures):
+                for future in concurrent.futures.as_completed(future_to_region):
                     try:
                         future.result()
                     except Exception as e:
-                        log_with_color(f"Error in thread: {str(e)}", "red", "error")
+                        failed_region = future_to_region[future]
+                        log_with_color(f"Error in thread for region {failed_region}: {str(e)}", "red", "error")
                         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+                        record_result(sub_account, failed_region, "-", "failed", f"region worker error: {str(e)}"[:200])
 
         except Exception as e:
             log_with_color(f"Error processing account {sub_account}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+            record_result(sub_account, "-", "-", "failed", f"unexpected error: {str(e)}"[:200])
             continue
 
+    needs_attention = print_summary()
     end_time = datetime.now()
     duration = end_time - start_time
     log_with_color(f"Stack update process completed in {duration}", "green")
+    return needs_attention
 
 
 def update_stack(sub_account_session, region, include_filters, exclude_filters, sub_account, avoid_waiting, custom_tags):
@@ -165,12 +220,18 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     try:
         # Set up a new CloudFormation client for the current region
         cfn_client = sub_account_session.client('cloudformation', region_name=region)
-        # Get the list of stacks in the region
-        stacks = cfn_client.list_stacks()['StackSummaries']
-        log_with_color(f"Retrieved {len(stacks)} total stacks in region {region}", "blue")
+        # Get the list of stacks in the region. Paginate (a single list_stacks
+        # call returns at most 100 summaries) and filter to the statuses this
+        # script acts on — an unfiltered call also returns stacks deleted in
+        # the last 90 days, which can push live stacks past the first page.
+        for page in cfn_client.get_paginator('list_stacks').paginate(
+                StackStatusFilter=UPDATE_STATUSES + ROLLBACK_STATUSES):
+            stacks.extend(page['StackSummaries'])
+        log_with_color(f"Retrieved {len(stacks)} stacks in actionable statuses in region {region}", "blue")
     except Exception as e:
         log_with_color(f"Failed to list stacks in {region}: {str(e)}", "red", "error")
         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+        record_result(sub_account, region, "-", "failed", "could not list stacks in region")
         return False
 
     # Count stacks matching include filters
@@ -185,7 +246,7 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     rollback_stacks = [stack for stack in stacks if
                        ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
                         not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
-                        stack['StackStatus'] == 'UPDATE_ROLLBACK_FAILED') and
+                        stack['StackStatus'] in ROLLBACK_STATUSES) and
                        'ParentId' not in stack]
     
     log_with_color(f"Found {len(rollback_stacks)} stacks in need of rollback", "yellow", "warning")
@@ -196,20 +257,51 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
         try:
             log_with_color(f"Rolling back stack: '{rb_stack['StackName']}'", "yellow", "warning")
             cfn_client.continue_update_rollback(StackName=rb_stack['StackName'])
-            if not avoid_waiting:
-                cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack['StackName'])
+            if avoid_waiting:
+                # The rollback runs unattended, so this stack cannot be updated
+                # in this run — surface it in the summary instead of dropping it.
+                log_with_color(f"Rollback of '{rb_stack['StackName']}' initiated (not waiting); "
+                               f"re-run later to update this stack", "yellow", "warning")
+                record_result(sub_account, region, rb_stack['StackName'], "rollback_initiated")
+                continue
+            cfn_client.get_waiter('stack_rollback_complete').wait(StackName=rb_stack['StackName'])
+            # The cached summary still shows the pre-rollback status; correct it
+            # so the update filter below picks this stack up.
+            rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
             log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
         except Exception as e:
+            # The waiter also fails on timeout, so re-check the actual status
+            # before recording: the rollback may have completed just after the
+            # last poll (same re-check pattern as the update waiter below).
+            try:
+                final_status = cfn_client.describe_stacks(
+                    StackName=rb_stack['StackName'])['Stacks'][0]['StackStatus']
+            except Exception:
+                final_status = "UNKNOWN"
+            if final_status == 'UPDATE_ROLLBACK_COMPLETE':
+                rb_stack['StackStatus'] = 'UPDATE_ROLLBACK_COMPLETE'
+                log_with_color(f"Successfully rolled back stack: '{rb_stack['StackName']}'", "green")
+                continue
+            if final_status in ('UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS'):
+                # The rollback is still finishing (cleanup only occurs after it
+                # effectively succeeded). The stack cannot be updated while
+                # *_IN_PROGRESS, so treat it like an unattended rollback:
+                # surface it and require a re-run instead of a hard failure.
+                log_with_color(f"Rollback of '{rb_stack['StackName']}' still finishing (status {final_status}); "
+                               f"re-run later to update this stack", "yellow", "warning")
+                record_result(sub_account, region, rb_stack['StackName'], "rollback_initiated")
+                continue
             log_with_color(f"Failed to rollback stack {rb_stack['StackName']}: {str(e)}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+            record_result(sub_account, region, rb_stack['StackName'], "failed",
+                          f"rollback did not complete (status {final_status}): {str(e)}"[:200])
 
-    # Filter the list of stacks for update
+    # Filter the list of stacks for update (stacks successfully rolled back
+    # above had their cached status corrected, so they are included here)
     update_stacks = [stack for stack in stacks if
                        ((any(include_filter in stack['StackName'] for include_filter in include_filters)) and
                         not any(exclude_filter in stack['StackName'] for exclude_filter in exclude_filters) and
-               (stack['StackStatus'] == 'CREATE_COMPLETE' or
-                stack['StackStatus'] == 'UPDATE_COMPLETE' or
-                stack['StackStatus'] == 'UPDATE_ROLLBACK_COMPLETE')) and
+               stack['StackStatus'] in UPDATE_STATUSES) and
               'ParentId' not in stack]
 
     log_with_color(f"Found {len(update_stacks)} stacks eligible for update", "blue")
@@ -226,7 +318,7 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
     # Create a ThreadPoolExecutor to run the update_single_stack function concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = [executor.submit(update_single_stack, cfn_client, stack,
-                                   region, avoid_waiting, custom_tags) for stack in update_stacks]
+                                   region, avoid_waiting, custom_tags, sub_account) for stack in update_stacks]
 
         # Wait for all futures to complete and handle any exceptions
         for future in concurrent.futures.as_completed(futures):
@@ -237,7 +329,7 @@ def update_stack(sub_account_session, region, include_filters, exclude_filters, 
                 log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
 
 
-def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
+def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags, sub_account="-"):
     stack_name = stack['StackName']
     try:
         log_with_color(f"Starting update for stack: {stack_name}", "blue")
@@ -277,22 +369,70 @@ def update_single_stack(cfn_client, stack, region, avoid_waiting, custom_tags):
             log_with_color(f"Waiting for stack {stack_name} update to complete...", "blue")
             cfn_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
             log_with_color(f"Stack {stack_name} update completed successfully", "green")
+            record_result(sub_account, region, stack_name, "updated")
         else:
             log_with_color(f"Stack {stack_name} update initiated (not waiting for completion)", "yellow", "warning")
-            
+            record_result(sub_account, region, stack_name, "initiated")
+
+    except WaiterError as e:
+        # The waiter gives up on terminal states AND on timeout, so check the
+        # stack's actual status before telling the operator what happened.
+        try:
+            final_status = cfn_client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+        except Exception:
+            final_status = "UNKNOWN"
+        if final_status in ('UPDATE_COMPLETE', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS'):
+            # The update finished between the waiter's last poll (or timeout)
+            # and this re-check — it succeeded. CLEANUP_IN_PROGRESS only occurs
+            # after a successful update, while replaced resources are removed.
+            log_with_color(f"Stack {stack_name} update completed successfully", "green")
+            record_result(sub_account, region, stack_name, "updated")
+            return
+        if final_status == 'UPDATE_ROLLBACK_COMPLETE':
+            msg = (f"Stack {stack_name} in {region}: update failed and was rolled back by CloudFormation "
+                   f"(stack restored to its previous state). Check the stack's events in the "
+                   f"CloudFormation console for the failing resource.")
+            reason = "update rolled back by CloudFormation"
+        elif final_status == 'UPDATE_ROLLBACK_FAILED':
+            msg = (f"Stack {stack_name} in {region}: update failed and the rollback also failed — the stack "
+                   f"is stuck in UPDATE_ROLLBACK_FAILED. A re-run will attempt continue_update_rollback, "
+                   f"or fix the blocking resource in the CloudFormation console first.")
+            reason = "update failed and rollback failed (UPDATE_ROLLBACK_FAILED)"
+        elif 'ROLLBACK' in final_status:
+            # UPDATE_ROLLBACK_IN_PROGRESS / _CLEANUP_IN_PROGRESS: the update
+            # already failed and CloudFormation is still reverting it — it can
+            # never finish successfully.
+            msg = (f"Stack {stack_name} in {region}: update failed and CloudFormation is rolling it back "
+                   f"(status {final_status}). Check the stack's events in the CloudFormation console "
+                   f"for the failing resource.")
+            reason = f"update failed; rollback in progress ({final_status})"
+        elif final_status.endswith('_IN_PROGRESS'):
+            msg = (f"Stack {stack_name} in {region}: gave up waiting but the update is still running "
+                   f"(status {final_status}) — it may yet finish; check the CloudFormation console later. "
+                   f"Waiter reason: {e}")
+            reason = f"timed out waiting; stack still {final_status}"
+        else:
+            msg = (f"Stack {stack_name} in {region}: update did not reach UPDATE_COMPLETE "
+                   f"(final status: {final_status}). Waiter reason: {e}")
+            reason = f"update ended in {final_status}"
+        log_with_color(msg, "red", "error")
+        record_result(sub_account, region, stack_name, "failed", reason)
     except ClientError as e:
         error_code = e.response['Error']['Code']
         error_message = e.response['Error']['Message']
-        
+
         # Handle "No updates are to be performed" as a warning
         if error_code == 'ValidationError' and 'No updates are to be performed' in error_message:
             log_with_color(f"Stack {stack_name} in {region} is already up to date", "green")
+            record_result(sub_account, region, stack_name, "up_to_date")
         else:
             log_with_color(f"Failed to update stack {stack_name} in {region}: {error_code} - {error_message}", "red", "error")
             log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+            record_result(sub_account, region, stack_name, "failed", f"{error_code}: {error_message}"[:200])
     except Exception as e:
         log_with_color(f"Unexpected error updating stack {stack_name}: {str(e)}", "red", "error")
         log_with_color(f"Stack trace: {traceback.format_exc()}", "red", "error")
+        record_result(sub_account, region, stack_name, "failed", str(e)[:200])
 
 
 if __name__ == "__main__":
@@ -316,6 +456,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_workers", help="Maximum number of concurrent workers for stack updates", type=int, default=5)
     args = parser.parse_args()
-    main(args.aws_profile_name, control_role=args.control_role,
-         region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags, include_collection_stacks=args.include_collection_stacks, accounts=args.accounts,
-         max_workers=args.max_workers)
+    needs_attention = main(args.aws_profile_name, control_role=args.control_role,
+                           region=args.region, avoid_waiting=args.avoid_waiting, custom_tags=args.custom_tags, include_collection_stacks=args.include_collection_stacks, accounts=args.accounts,
+                           max_workers=args.max_workers)
+    sys.exit(1 if needs_attention else 0)
