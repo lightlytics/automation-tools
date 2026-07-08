@@ -24,6 +24,11 @@ class _DeleteIntegrationParser(argparse.ArgumentParser):
             self.error(
                 "--lambda_name_contains cannot be combined with --force_delete_failed "
                 "or --stack_name_contains (lambda-only mode does not touch stacks).")
+        if ns.lambda_name_contains:
+            try:
+                validate_lambda_pattern(ns.lambda_name_contains)
+            except ValueError as e:
+                self.error(str(e))
         return ns
 
 
@@ -135,19 +140,26 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
     plan_path = os.path.join(
         os.getcwd(), f"lambda_delete_plan_{time.strftime('%Y%m%d-%H%M%S')}.txt")
     if all_to_delete:
-        write_plan_file(all_to_delete, plan_path)
-        print(color(f"Full plan written to: {plan_path}", "blue"))
+        try:
+            write_plan_file(all_to_delete, plan_path)
+            print(color(f"Full plan written to: {plan_path}", "blue"))
+        except Exception as e:
+            print(color(f"Could not write plan file to {plan_path}: {e} "
+                        "(continuing - the plan above is still valid)", "yellow"))
+
+    def _surface_assume_role_failures():
+        return print_lambda_summary([], [], [], all_skipped, assume_role_failures)
 
     if just_print:
         print(color("Dry run (--just_print) - nothing deleted.", "green"))
-        return 0
+        return _surface_assume_role_failures()
     if not all_to_delete:
         print(color("No matching lambda functions found - nothing to delete.", "green"))
-        return 0
+        return _surface_assume_role_failures()
 
     account_count = len({d["account"] for d in all_to_delete})
     if not confirm_deletion(len(all_to_delete), account_count, sys.stdin.isatty, input):
-        return 0
+        return _surface_assume_role_failures()
 
     # Delete phase - re-assume roles fresh (the scan can outlive 1h STS creds)
     deleted, already_gone, failed = [], [], []
@@ -174,21 +186,25 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                 future_to_item = {
                     executor.submit(delete_lambda_function, session, it["region"],
                                     it["function"]): it for it in items}
-                for future in concurrent.futures.as_completed(future_to_item):
-                    it = future_to_item[future]
-                    try:
-                        outcome = future.result()
-                        if outcome == "already gone":
-                            already_gone.append(it)
-                        else:
-                            deleted.append(it)
-                            print(color(f"Account: {account_id} | Deleted "
-                                        f"{it['function']} ({it['region']})", "green"))
-                    except Exception as e:
-                        it2 = dict(it, reason=str(e)[:200])
-                        failed.append(it2)
-                        print(color(f"Account: {account_id} | Failed to delete "
-                                    f"{it['function']} ({it['region']}): {e}", "red"))
+                try:
+                    for future in concurrent.futures.as_completed(future_to_item):
+                        it = future_to_item[future]
+                        try:
+                            outcome = future.result()
+                            if outcome == "already gone":
+                                already_gone.append(it)
+                            else:
+                                deleted.append(it)
+                                print(color(f"Account: {account_id} | Deleted "
+                                            f"{it['function']} ({it['region']})", "green"))
+                        except Exception as e:
+                            it2 = dict(it, reason=str(e)[:200])
+                            failed.append(it2)
+                            print(color(f"Account: {account_id} | Failed to delete "
+                                        f"{it['function']} ({it['region']}): {e}", "red"))
+                except KeyboardInterrupt:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
     except KeyboardInterrupt:
         print(color("\nInterrupted - stopping. Summary of work done so far:", "yellow"))
 
