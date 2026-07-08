@@ -3,6 +3,7 @@ import datetime
 import time
 from termcolor import colored as color
 import os
+from botocore.config import Config
 
 def get_all_accounts(org_client):
     list_accounts = []
@@ -378,3 +379,42 @@ def format_plan_lines(results):
     and easy diffing/grepping of the written plan file."""
     return [f"{r['account']} | {r['region']} | {r['function']}"
             for r in sorted(results, key=lambda r: (r["account"], r["region"], r["function"]))]
+
+
+LAMBDA_CLIENT_CONFIG = Config(
+    connect_timeout=15,
+    read_timeout=60,
+    retries={"max_attempts": 10, "mode": "adaptive"},
+)
+
+
+def scan_lambdas_in_region(sub_account_session, region, pattern):
+    """List Lambda functions in a region, keep those whose name matches pattern,
+    and split them into (to_delete, skipped_cfn). A function tagged as
+    CloudFormation-managed goes to skipped_cfn with its owning stack name; it is
+    never deleted. list_tags is called only for name-matched functions."""
+    client = sub_account_session.client("lambda", region_name=region, config=LAMBDA_CLIENT_CONFIG)
+    to_delete, skipped_cfn = [], []
+    for page in client.get_paginator("list_functions").paginate():
+        for fn in page["Functions"]:
+            name = fn["FunctionName"]
+            if not lambda_name_matches(name, pattern):
+                continue
+            tags = client.list_tags(Resource=fn["FunctionArn"]).get("Tags", {})
+            if is_cfn_managed(tags):
+                skipped_cfn.append(
+                    {"region": region, "function": name, "stack": tags[CFN_STACK_NAME_TAG]})
+            else:
+                to_delete.append({"region": region, "function": name})
+    return to_delete, skipped_cfn
+
+
+def delete_lambda_function(sub_account_session, region, function_name):
+    """Delete a Lambda function. Returns 'deleted', or 'already gone' if it was
+    already removed between the scan and now. Other errors propagate to the caller."""
+    client = sub_account_session.client("lambda", region_name=region, config=LAMBDA_CLIENT_CONFIG)
+    try:
+        client.delete_function(FunctionName=function_name)
+        return "deleted"
+    except client.exceptions.ResourceNotFoundException:
+        return "already gone"
