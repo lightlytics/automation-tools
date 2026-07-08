@@ -40,9 +40,19 @@ integration; lambda-only mode must NOT remove the integration.
 1. **Scan** each target account (assume `OrganizationAccountAccessRole`; mgmt = current
    session); regions in a thread pool (8 workers). Per region: paginated `ListFunctions`
    → name match → `ListTags` on matches for the CFN check. Collect account/region/name.
-2. **List** the full `account | region | function` table + totals + CFN-skipped. Stop
-   here if `--just_print`.
-3. **Confirm** — exit silently if no matches; else require typing `delete` exactly.
+2. **List** the plan, designed to stay reviewable at 160+ functions:
+   - **Per-account roll-up** — one line per account (`<id> (<name>)  <N> functions`),
+     sorted by count descending, so the biggest blast radius is on top.
+   - **Grand total** — `Total: N functions across M accounts`.
+   - **Full flat table** — `account | region | function` for spot-checking / scrollback.
+   - **CFN-skipped** functions listed separately with their owning stack name.
+   - **Plan file** — the full flat list is also written to
+     `lambda_delete_plan_<timestamp>.txt` and its path printed, so the plan can be
+     grepped/diffed/shared and serves as an audit record. `--just_print` writes this
+     file and stops here.
+3. **Confirm** — exit silently if no matches; else echo the totals
+   (`About to delete N functions across M accounts — type 'delete' to proceed`) and
+   require typing `delete` exactly.
 4. **Delete** — re-assume roles fresh per account (scan can outlive 1h STS creds),
    `DeleteFunction` per match. Already-gone functions = `already gone`, not a failure.
 
