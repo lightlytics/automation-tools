@@ -333,3 +333,27 @@ def filter_ll_stacks_from_url(sub_account_session, region, ll_url, return_only_n
             return ll_stacks_to_return
     except Exception:
         return []
+
+
+CFN_STACK_NAME_TAG = "aws:cloudformation:stack-name"
+LAMBDA_MIN_PATTERN_LEN = 3
+
+
+def validate_lambda_pattern(pattern):
+    """Return the stripped pattern, or raise ValueError if it is missing or
+    shorter than LAMBDA_MIN_PATTERN_LEN characters (guards against a typo like
+    's' matching hundreds of functions)."""
+    if pattern is None or len(pattern.strip()) < LAMBDA_MIN_PATTERN_LEN:
+        raise ValueError(
+            f"--lambda_name_contains must be at least {LAMBDA_MIN_PATTERN_LEN} characters")
+    return pattern.strip()
+
+
+def lambda_name_matches(function_name, pattern):
+    """Case-insensitive substring match of pattern within function_name."""
+    return pattern.lower() in function_name.lower()
+
+
+def is_cfn_managed(tags):
+    """True if the Lambda's tags mark it as CloudFormation-managed."""
+    return CFN_STACK_NAME_TAG in (tags or {})
