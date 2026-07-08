@@ -28,6 +28,11 @@ class TestArgParser(unittest.TestCase):
             parser.parse_args(
                 ["--lambda_name_contains", "StreamSec", "--stack_name_contains", "Light"])
 
+    def test_lambda_pattern_too_short_rejected_at_parse_time(self):
+        parser = build_arg_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--lambda_name_contains", "ab"])
+
 
 if __name__ == "__main__":
     unittest.main()
