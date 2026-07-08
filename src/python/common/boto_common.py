@@ -418,3 +418,26 @@ def delete_lambda_function(sub_account_session, region, function_name):
         return "deleted"
     except client.exceptions.ResourceNotFoundException:
         return "already gone"
+
+
+def confirm_deletion(total, account_count, isatty_fn, input_fn):
+    """Interactive safety gate. Returns True only on an interactive terminal when
+    the operator types exactly 'delete'. On a non-TTY (nohup/pipe/CI) it refuses
+    instead of blocking forever on input(); EOF/Ctrl+C also abort. isatty_fn and
+    input_fn are injected so this is unit-testable."""
+    if not isatty_fn():
+        print(color(
+            "No interactive terminal detected — refusing to delete. "
+            "Run interactively, or use --just_print to preview.", "red"))
+        return False
+    try:
+        answer = input_fn(
+            f"About to delete {total} lambda functions across {account_count} accounts. "
+            f"Type 'delete' to proceed: ")
+    except (EOFError, KeyboardInterrupt):
+        print(color("\nAborted — nothing was deleted.", "yellow"))
+        return False
+    if answer.strip() == "delete":
+        return True
+    print(color("Confirmation did not match 'delete' — nothing was deleted.", "yellow"))
+    return False
