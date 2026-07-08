@@ -9,6 +9,7 @@ from src.python.common.boto_common import (
     is_cfn_managed,
     CFN_STACK_NAME_TAG,
 )
+from src.python.common.boto_common import build_account_rollup, format_plan_lines
 
 
 class TestValidateLambdaPattern(unittest.TestCase):
@@ -45,6 +46,34 @@ class TestIsCfnManaged(unittest.TestCase):
 
     def test_false_when_none(self):
         self.assertFalse(is_cfn_managed(None))
+
+
+class TestBuildAccountRollup(unittest.TestCase):
+    def _results(self):
+        return [
+            {"account": "111", "name": "acme-prod", "region": "us-east-1", "function": "a"},
+            {"account": "111", "name": "acme-prod", "region": "us-east-1", "function": "b"},
+            {"account": "222", "name": "acme-dev", "region": "eu-west-1", "function": "c"},
+        ]
+
+    def test_counts_and_sort_desc(self):
+        rollup = build_account_rollup(self._results())
+        self.assertEqual(rollup[0], ("111", "acme-prod", 2))
+        self.assertEqual(rollup[1], ("222", "acme-dev", 1))
+
+    def test_empty(self):
+        self.assertEqual(build_account_rollup([]), [])
+
+
+class TestFormatPlanLines(unittest.TestCase):
+    def test_sorted_lines(self):
+        results = [
+            {"account": "222", "name": "d", "region": "us-east-1", "function": "z"},
+            {"account": "111", "name": "p", "region": "us-east-1", "function": "a"},
+        ]
+        lines = format_plan_lines(results)
+        self.assertEqual(lines[0], "111 | us-east-1 | a")
+        self.assertEqual(lines[1], "222 | us-east-1 | z")
 
 
 if __name__ == "__main__":
