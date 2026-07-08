@@ -80,6 +80,11 @@ def _scan_account_lambdas(sub_account, session, regions, pattern):
     """Scan all regions of one account in parallel; return (to_delete, skipped)
     with account id+name stamped on each result dict."""
     to_delete, skipped = [], []
+    if not regions:
+        return to_delete, skipped
+    # Warm the session's client-creation caches single-threaded; boto3 Session
+    # is not thread-safe for concurrent first-time client creation.
+    session.client("lambda", region_name=regions[0])
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         future_to_region = {
             executor.submit(scan_lambdas_in_region, session, region, pattern): region
@@ -160,6 +165,11 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                             f"skipping. Error: {e}", "red"))
                 assume_role_failures.append((account_id, name, str(e)))
                 continue
+            if not items:
+                continue
+            # Warm the session's client-creation caches single-threaded; boto3 Session
+            # is not thread-safe for concurrent first-time client creation.
+            session.client("lambda", region_name=items[0]["region"])
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 future_to_item = {
                     executor.submit(delete_lambda_function, session, it["region"],
