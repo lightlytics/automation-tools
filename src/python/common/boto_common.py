@@ -357,3 +357,24 @@ def lambda_name_matches(function_name, pattern):
 def is_cfn_managed(tags):
     """True if the Lambda's tags mark it as CloudFormation-managed."""
     return CFN_STACK_NAME_TAG in (tags or {})
+
+
+def build_account_rollup(results):
+    """Group delete-plan results by account into (account_id, account_name, count)
+    tuples, sorted by count descending then account id, so the accounts losing the
+    most functions appear first."""
+    counts = {}
+    names = {}
+    for r in results:
+        counts[r["account"]] = counts.get(r["account"], 0) + 1
+        names[r["account"]] = r.get("name", "")
+    rollup = [(acc, names[acc], cnt) for acc, cnt in counts.items()]
+    rollup.sort(key=lambda t: (-t[2], t[0]))
+    return rollup
+
+
+def format_plan_lines(results):
+    """One 'account | region | function' line per result, sorted for stable output
+    and easy diffing/grepping of the written plan file."""
+    return [f"{r['account']} | {r['region']} | {r['function']}"
+            for r in sorted(results, key=lambda r: (r["account"], r["region"], r["function"]))]
