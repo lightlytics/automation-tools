@@ -441,3 +441,51 @@ def confirm_deletion(total, account_count, isatty_fn, input_fn):
         return True
     print(color("Confirmation did not match 'delete' — nothing was deleted.", "yellow"))
     return False
+
+
+def write_plan_file(results, path):
+    """Write the full delete plan (one 'account | region | function' per line) to
+    path so it can be grepped, diffed, shared, and kept as an audit record."""
+    with open(path, "w") as f:
+        f.write("\n".join(format_plan_lines(results)) + "\n")
+
+
+def print_lambda_plan(results, skipped_cfn):
+    """Print the delete plan: a per-account roll-up (biggest blast radius first),
+    the grand total, the full flat table, and the CFN-managed functions skipped."""
+    rollup = build_account_rollup(results)
+    print(color("Lambda functions to delete (per account):", "blue"))
+    for account_id, name, count in rollup:
+        print(f"  {account_id} ({name})  {count} functions")
+    print(color(
+        f"Total: {len(results)} functions across {len(rollup)} accounts", "blue"))
+    if results:
+        print(color("Full list:", "blue"))
+        for line in format_plan_lines(results):
+            print(f"  {line}")
+    if skipped_cfn:
+        print(color(
+            f"Skipped {len(skipped_cfn)} CloudFormation-managed function(s) "
+            f"(not deleted):", "yellow"))
+        for s in sorted(skipped_cfn, key=lambda x: (x["account"], x["region"], x["function"])):
+            print(f"  {s['account']} | {s['region']} | {s['function']} "
+                  f"(stack: {s['stack']})")
+
+
+def print_lambda_summary(deleted, already_gone, failed, skipped_cfn, assume_role_failures):
+    """Print end-of-run counts with per-item detail for failures and an explicit
+    list of accounts where assume-role failed (copy them into --accounts for a
+    re-run). Returns the number of items needing attention, for the exit code."""
+    print(color("=" * 60, "blue"))
+    print(color(
+        f"Run summary: {len(deleted)} deleted | {len(already_gone)} already gone | "
+        f"{len(failed)} failed | {len(skipped_cfn)} skipped (CFN-managed) | "
+        f"{len(assume_role_failures)} accounts unreachable (assume-role failed)", "blue"))
+    for r in failed:
+        print(color(
+            f"  FAILED | account {r['account']} | {r['region']} | {r['function']} | "
+            f"{r['reason']}", "red"))
+    for account_id, name, err in assume_role_failures:
+        print(color(
+            f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}", "red"))
+    return len(failed) + len(assume_role_failures)
