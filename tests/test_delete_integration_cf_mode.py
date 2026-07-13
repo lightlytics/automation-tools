@@ -35,5 +35,27 @@ class TestCfModeExitCode(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class TestAccountFilterValidation(unittest.TestCase):
+    def _patches(self):
+        # Org has one ACTIVE account, 111; describe_organization/get_all_accounts mocked.
+        org = mock_org = __import__("unittest").mock.MagicMock()
+        org.describe_organization.return_value = {"Organization": {"MasterAccountId": "111"}}
+        return org
+
+    def test_all_unknown_accounts_exits_nonzero_without_running_a_mode(self):
+        org = self._patches()
+        with patch.object(mod.boto3, "client", return_value=org), \
+                patch.object(mod, "get_all_accounts",
+                             return_value=[{"Id": "111", "Name": "a", "Status": "ACTIVE"}]), \
+                patch.object(mod, "_run_lambda_mode") as run_lambda, \
+                patch.object(mod, "_run_cf_mode") as run_cf:
+            rc = mod.main(accounts="999999999999", aws_profile_name=None,
+                          regions="us-east-1", just_print=True,
+                          lambda_name_contains="streamsec")
+        self.assertEqual(rc, 1)                 # no valid target -> non-zero
+        run_lambda.assert_not_called()          # and neither mode is entered
+        run_cf.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

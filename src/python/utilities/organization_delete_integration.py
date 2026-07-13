@@ -161,8 +161,14 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
             all_scan_errors.extend(scan_errors)
     except KeyboardInterrupt:
         # Match the delete phase: abort cleanly instead of dumping a traceback.
-        # The scan is incomplete, so do not proceed to deletion.
+        # The scan is incomplete, so do not proceed to deletion — but still show
+        # what was already discovered so the operator isn't misled into thinking
+        # nothing was found.
         print(color("\nInterrupted during scan - aborting before any deletion.", "yellow"))
+        print_lambda_plan(all_to_delete, all_skipped)
+        if all_to_delete:
+            print(color(f"({len(all_to_delete)} function(s) were already identified but "
+                        f"will NOT be deleted because the scan was interrupted.)", "yellow"))
         print_lambda_summary([], [], all_scan_errors, all_skipped, assume_role_failures)
         return 1
 
@@ -236,37 +242,50 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                     failed.append(dict(it, reason=f"delete skipped - could not assume "
                                                   f"role: {str(e)[:120]}"))
                 continue
-            # Warm the session's client-creation caches single-threaded; boto3 Session
-            # is not thread-safe for concurrent first-time client creation.
-            session.client("lambda", region_name=items[0]["region"])
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                future_to_item = {
-                    executor.submit(delete_lambda_function, session, it["region"],
-                                    it["function"]): it for it in items}
-                try:
-                    for future in concurrent.futures.as_completed(future_to_item):
-                        it = future_to_item[future]
-                        try:
-                            outcome = future.result()
-                            if outcome == "already gone":
-                                already_gone.append(it)
-                            else:
-                                deleted.append(it)
-                                print(color(f"Account: {account_id} | Deleted "
-                                            f"{it['function']} ({it['region']})", "green"))
-                        except Exception as e:
-                            it2 = dict(it, reason=str(e)[:200])
-                            failed.append(it2)
-                            print(color(f"Account: {account_id} | Failed to delete "
-                                        f"{it['function']} ({it['region']}): {e}", "red"))
-                except KeyboardInterrupt:
+            try:
+                # Warm the session's client-creation caches single-threaded; boto3
+                # Session is not thread-safe for concurrent first-time client creation.
+                session.client("lambda", region_name=items[0]["region"])
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                    future_to_item = {
+                        executor.submit(delete_lambda_function, session, it["region"],
+                                        it["function"]): it for it in items}
                     try:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                    except TypeError:
-                        # cancel_futures was added in Python 3.9; on 3.8 fall back
-                        # to a plain shutdown so Ctrl+C still aborts cleanly.
-                        executor.shutdown(wait=False)
-                    raise
+                        for future in concurrent.futures.as_completed(future_to_item):
+                            it = future_to_item[future]
+                            try:
+                                outcome = future.result()
+                                if outcome == "already gone":
+                                    already_gone.append(it)
+                                else:
+                                    deleted.append(it)
+                                    print(color(f"Account: {account_id} | Deleted "
+                                                f"{it['function']} ({it['region']})", "green"))
+                            except Exception as e:
+                                it2 = dict(it, reason=str(e)[:200])
+                                failed.append(it2)
+                                print(color(f"Account: {account_id} | Failed to delete "
+                                            f"{it['function']} ({it['region']}): {e}", "red"))
+                    except KeyboardInterrupt:
+                        try:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                        except TypeError:
+                            # cancel_futures was added in Python 3.9; on 3.8 fall back
+                            # to a plain shutdown so Ctrl+C still aborts cleanly.
+                            executor.shutdown(wait=False)
+                        raise
+            except Exception as e:
+                # An unexpected error for this account (e.g. the warm-up client call
+                # or executor setup) must not crash the whole run — record whatever
+                # of this account's functions weren't handled as failed and continue.
+                print(color(f"Account: {account_id} | Unexpected error during delete, "
+                            f"skipping remaining: {e}", "red"))
+                done = {(x["account"], x["region"], x["function"])
+                        for x in deleted + already_gone + failed}
+                for it in items:
+                    if (it["account"], it["region"], it["function"]) not in done:
+                        failed.append(dict(it, reason=f"delete error: {str(e)[:120]}"))
+                continue
     except KeyboardInterrupt:
         interrupted = True
         print(color("\nInterrupted - stopping. Summary of work done so far:", "yellow"))
@@ -361,7 +380,18 @@ def main(accounts, aws_profile_name, regions=None, just_print=False,
                         f"account will be accessed via assume-role.", "yellow"))
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     if account_filter:
+        active_ids = {sa[0] for sa in sub_accounts}
+        unknown = [aid for aid in account_filter if aid not in active_ids]
+        if unknown:
+            # Don't silently ignore a typo'd or inactive account id — that would let
+            # a run "succeed" while never targeting the account the operator meant.
+            print(color(f"Warning: {len(unknown)} requested account(s) are not ACTIVE "
+                        f"org accounts and will be skipped: {unknown}", "red"))
         sub_accounts = [sa for sa in sub_accounts if sa[0] in account_filter]
+        if not sub_accounts:
+            print(color("None of the requested --accounts match an ACTIVE org account; "
+                        "nothing to do. Exiting non-zero.", "red"))
+            return 1
     print(color(f"Accounts to process: {[sa[0] for sa in sub_accounts]}", "blue"))
 
     if lambda_name_contains:
