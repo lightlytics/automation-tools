@@ -35,14 +35,42 @@ class TestScanLambdasInRegion(unittest.TestCase):
         )
         session = _session_with_lambda(client)
 
-        to_delete, skipped = scan_lambdas_in_region(session, "us-east-1", "streamsec")
+        to_delete, skipped, scan_errors = scan_lambdas_in_region(session, "us-east-1", "streamsec")
 
         self.assertEqual([d["function"] for d in to_delete], ["StreamSec_A"])
         self.assertEqual(len(skipped), 1)
         self.assertEqual(skipped[0]["function"], "StreamSec_B")
         self.assertEqual(skipped[0]["stack"], "LightlyticsStack-x")
+        self.assertEqual(scan_errors, [])
         # list_tags must be called only for name-matched functions (A and B), not C
         self.assertEqual(client.list_tags.call_count, 2)
+
+    def test_tag_failure_excludes_function_and_records_error(self):
+        client = MagicMock()
+        paginator = MagicMock()
+        paginator.paginate.return_value = [{
+            "Functions": [
+                {"FunctionName": "StreamSec_ok", "FunctionArn": "arn:ok"},
+                {"FunctionName": "StreamSec_bad", "FunctionArn": "arn:bad"},
+            ]
+        }]
+        client.get_paginator.return_value = paginator
+
+        def _tags(Resource):
+            if Resource == "arn:bad":
+                raise Exception("AccessDenied on ListTags")
+            return {"Tags": {}}
+        client.list_tags.side_effect = _tags
+        session = _session_with_lambda(client)
+
+        to_delete, skipped, scan_errors = scan_lambdas_in_region(session, "us-east-1", "streamsec")
+
+        # A tag failure must NOT abort the region: the good function is still found,
+        # the bad one is left out of to_delete and recorded as a scan error.
+        self.assertEqual([d["function"] for d in to_delete], ["StreamSec_ok"])
+        self.assertEqual(len(scan_errors), 1)
+        self.assertEqual(scan_errors[0]["function"], "StreamSec_bad")
+        self.assertIn("could not read tags", scan_errors[0]["reason"])
 
 
 class TestDeleteLambdaFunction(unittest.TestCase):

@@ -82,11 +82,19 @@ def _session_for_account(sub_account, sts_client, management_account_id):
 
 
 def _scan_account_lambdas(sub_account, session, regions, pattern):
-    """Scan all regions of one account in parallel; return (to_delete, skipped)
-    with account id+name stamped on each result dict."""
-    to_delete, skipped = [], []
+    """Scan all regions of one account in parallel; return
+    (to_delete, skipped, scan_errors) with account id+name stamped on each result
+    dict. scan_errors carries regions that could not be scanned and functions
+    whose tags could not be read, so an incomplete scan is surfaced rather than
+    silently dropping target functions."""
+    to_delete, skipped, scan_errors = [], [], []
     if not regions:
-        return to_delete, skipped
+        return to_delete, skipped, scan_errors
+
+    def _stamp(items):
+        for item in items:
+            item.update({"account": sub_account[0], "name": sub_account[1]})
+
     # Warm the session's client-creation caches single-threaded; boto3 Session
     # is not thread-safe for concurrent first-time client creation.
     session.client("lambda", region_name=regions[0])
@@ -97,18 +105,21 @@ def _scan_account_lambdas(sub_account, session, regions, pattern):
         for future in concurrent.futures.as_completed(future_to_region):
             region = future_to_region[future]
             try:
-                region_delete, region_skipped = future.result()
+                region_delete, region_skipped, region_errors = future.result()
             except Exception as e:
+                # The whole region could not be scanned. Record it so its target
+                # functions are surfaced as a gap and counted, not silently lost.
                 print(color(f"Account: {sub_account[0]} | Failed to scan region "
                             f"{region}: {e}", "red"))
+                scan_errors.append({"region": region, "function": "(entire region)",
+                                    "reason": f"region scan failed: {str(e)[:150]}"})
+                _stamp([scan_errors[-1]])
                 continue
-            for d in region_delete:
-                d.update({"account": sub_account[0], "name": sub_account[1]})
-                to_delete.append(d)
-            for s in region_skipped:
-                s.update({"account": sub_account[0], "name": sub_account[1]})
-                skipped.append(s)
-    return to_delete, skipped
+            _stamp(region_delete); _stamp(region_skipped); _stamp(region_errors)
+            to_delete.extend(region_delete)
+            skipped.extend(region_skipped)
+            scan_errors.extend(region_errors)
+    return to_delete, skipped, scan_errors
 
 
 def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
@@ -119,7 +130,7 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
         "stacks are NOT touched — to remove the Stream Security integration itself, "
         "run without --lambda_name_contains.", "yellow"))
 
-    all_to_delete, all_skipped, assume_role_failures = [], [], []
+    all_to_delete, all_skipped, all_scan_errors, assume_role_failures = [], [], [], []
 
     # Scan phase
     for sub_account in sub_accounts:
@@ -131,12 +142,22 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
             assume_role_failures.append((sub_account[0], sub_account[1], str(e)))
             continue
         print(color(f"Account: {sub_account[0]} | Scanning {len(regions)} regions", "blue"))
-        to_delete, skipped = _scan_account_lambdas(sub_account, session, regions, pattern)
+        to_delete, skipped, scan_errors = _scan_account_lambdas(
+            sub_account, session, regions, pattern)
         all_to_delete.extend(to_delete)
         all_skipped.extend(skipped)
+        all_scan_errors.extend(scan_errors)
 
     # Listing + plan file
     print_lambda_plan(all_to_delete, all_skipped)
+    if all_scan_errors:
+        print(color(
+            f"WARNING: {len(all_scan_errors)} region(s)/function(s) could not be fully "
+            f"scanned — the plan below may be INCOMPLETE (these are reported in the run "
+            f"summary and make the run exit non-zero):", "yellow"))
+        for e in all_scan_errors:
+            print(color(f"  SCAN GAP | account {e['account']} | {e['region']} | "
+                        f"{e['function']} | {e['reason']}", "yellow"))
     plan_path = os.path.join(
         os.getcwd(), f"lambda_delete_plan_{time.strftime('%Y%m%d-%H%M%S')}.txt")
     if all_to_delete:
@@ -147,19 +168,21 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
             print(color(f"Could not write plan file to {plan_path}: {e} "
                         "(continuing - the plan above is still valid)", "yellow"))
 
-    def _surface_assume_role_failures():
-        return print_lambda_summary([], [], [], all_skipped, assume_role_failures)
+    # Scan gaps are surfaced as failures so they show in the summary and drive a
+    # non-zero exit code, even on paths that delete nothing.
+    def _surface_early():
+        return print_lambda_summary([], [], all_scan_errors, all_skipped, assume_role_failures)
 
     if just_print:
         print(color("Dry run (--just_print) - nothing deleted.", "green"))
-        return _surface_assume_role_failures()
+        return _surface_early()
     if not all_to_delete:
         print(color("No matching lambda functions found - nothing to delete.", "green"))
-        return _surface_assume_role_failures()
+        return _surface_early()
 
     account_count = len({d["account"] for d in all_to_delete})
     if not confirm_deletion(len(all_to_delete), account_count, sys.stdin.isatty, input):
-        return _surface_assume_role_failures()
+        return _surface_early()
 
     # Delete phase - re-assume roles fresh (the scan can outlive 1h STS creds)
     deleted, already_gone, failed = [], [], []
@@ -208,8 +231,8 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
     except KeyboardInterrupt:
         print(color("\nInterrupted - stopping. Summary of work done so far:", "yellow"))
 
-    return print_lambda_summary(deleted, already_gone, failed, all_skipped,
-                                assume_role_failures)
+    return print_lambda_summary(deleted, already_gone, failed + all_scan_errors,
+                                all_skipped, assume_role_failures)
 
 
 def _run_cf_mode(sub_accounts, sts_client, management_account_id, regions,
@@ -262,7 +285,16 @@ def main(accounts, aws_profile_name, regions=None, just_print=False,
 
     print("Fetching all accounts connected to the organization")
     list_accounts = get_all_accounts(org_client)
-    management_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
+    # Used to route the management account through the current session instead of
+    # assume-role. If DescribeOrganization is not permitted, degrade gracefully to
+    # the previous behavior (every account via assume-role) rather than crashing.
+    try:
+        management_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
+    except Exception as e:
+        management_account_id = None
+        print(color(f"Warning: could not determine the management account "
+                    f"(organizations:DescribeOrganization): {e}. Every account will be "
+                    f"accessed via assume-role.", "yellow"))
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     if account_filter:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in account_filter]

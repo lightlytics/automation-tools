@@ -390,23 +390,32 @@ LAMBDA_CLIENT_CONFIG = Config(
 
 def scan_lambdas_in_region(sub_account_session, region, pattern):
     """List Lambda functions in a region, keep those whose name matches pattern,
-    and split them into (to_delete, skipped_cfn). A function tagged as
-    CloudFormation-managed goes to skipped_cfn with its owning stack name; it is
-    never deleted. list_tags is called only for name-matched functions."""
+    and split them into (to_delete, skipped_cfn, scan_errors). A function tagged
+    as CloudFormation-managed goes to skipped_cfn with its owning stack name; it
+    is never deleted. list_tags is called only for name-matched functions, and a
+    per-function tag failure never aborts the region scan: the function is left
+    out of to_delete (we can't confirm it isn't CFN-managed, so deleting it would
+    be unsafe) and recorded in scan_errors so the operator sees the gap."""
     client = sub_account_session.client("lambda", region_name=region, config=LAMBDA_CLIENT_CONFIG)
-    to_delete, skipped_cfn = [], []
+    to_delete, skipped_cfn, scan_errors = [], [], []
     for page in client.get_paginator("list_functions").paginate():
         for fn in page["Functions"]:
             name = fn["FunctionName"]
             if not lambda_name_matches(name, pattern):
                 continue
-            tags = client.list_tags(Resource=fn["FunctionArn"]).get("Tags", {})
+            try:
+                tags = client.list_tags(Resource=fn["FunctionArn"]).get("Tags", {})
+            except Exception as e:
+                scan_errors.append(
+                    {"region": region, "function": name,
+                     "reason": f"could not read tags, left out of plan: {str(e)[:150]}"})
+                continue
             if is_cfn_managed(tags):
                 skipped_cfn.append(
                     {"region": region, "function": name, "stack": tags[CFN_STACK_NAME_TAG]})
             else:
                 to_delete.append({"region": region, "function": name})
-    return to_delete, skipped_cfn
+    return to_delete, skipped_cfn, scan_errors
 
 
 def delete_lambda_function(sub_account_session, region, function_name):
