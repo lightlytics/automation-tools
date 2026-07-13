@@ -8,7 +8,7 @@ from src.python.utilities import organization_delete_integration as mod
 
 
 class TestCfModeExitCode(unittest.TestCase):
-    def test_assume_role_failures_counted_in_exit_code(self):
+    def test_unreachable_account_reported_but_does_not_fail_exit(self):
         accounts = [("111", "acct-a"), ("222", "acct-b")]
 
         def fake_session(sub_account, sts_client, mgmt):
@@ -22,8 +22,10 @@ class TestCfModeExitCode(unittest.TestCase):
                                   regions=["us-east-1"], just_print=True,
                                   force_delete_failed=False, stack_name_contains=None)
 
-        self.assertEqual(rc, 1)                      # one unreachable account -> non-zero
-        self.assertEqual(del_stacks.call_count, 1)   # only the reachable account was processed
+        # An unreachable account is a reported gap, not an operation failure, so it
+        # does not flip the exit code; the reachable account is still processed.
+        self.assertEqual(rc, 0)
+        self.assertEqual(del_stacks.call_count, 1)
 
     def test_clean_run_returns_zero(self):
         accounts = [("111", "acct-a")]

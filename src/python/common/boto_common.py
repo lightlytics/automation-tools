@@ -481,10 +481,20 @@ def print_lambda_plan(results, skipped_cfn):
                   f"(stack: {s['stack']})")
 
 
+def format_assume_role_failure_lines(assume_role_failures):
+    """Single source of the per-account 'ASSUME-ROLE FAILED' line format, shared
+    by print_lambda_summary and the CF-mode summary so the two cannot drift."""
+    return [f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}"
+            for account_id, name, err in assume_role_failures]
+
+
 def print_lambda_summary(deleted, already_gone, failed, skipped_cfn, assume_role_failures):
     """Print end-of-run counts with per-item detail for failures and an explicit
     list of accounts where assume-role failed (copy them into --accounts for a
-    re-run). Returns the number of items needing attention, for the exit code."""
+    re-run). Returns len(failed) — the count of actual operation failures that
+    should drive a non-zero exit. Unreachable accounts are reported but do NOT
+    affect the exit code (an account we merely couldn't reach is a reported gap,
+    not an operation failure)."""
     print(color("=" * 60, "blue"))
     print(color(
         f"Run summary: {len(deleted)} deleted | {len(already_gone)} already gone | "
@@ -494,7 +504,6 @@ def print_lambda_summary(deleted, already_gone, failed, skipped_cfn, assume_role
         print(color(
             f"  FAILED | account {r['account']} | {r['region']} | {r['function']} | "
             f"{r['reason']}", "red"))
-    for account_id, name, err in assume_role_failures:
-        print(color(
-            f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}", "red"))
-    return len(failed) + len(assume_role_failures)
+    for line in format_assume_role_failure_lines(assume_role_failures):
+        print(color(line, "yellow"))
+    return len(failed)

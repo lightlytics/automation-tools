@@ -142,8 +142,19 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
             assume_role_failures.append((sub_account[0], sub_account[1], str(e)))
             continue
         print(color(f"Account: {sub_account[0]} | Scanning {len(regions)} regions", "blue"))
-        to_delete, skipped, scan_errors = _scan_account_lambdas(
-            sub_account, session, regions, pattern)
+        try:
+            to_delete, skipped, scan_errors = _scan_account_lambdas(
+                sub_account, session, regions, pattern)
+        except Exception as e:
+            # One account's unexpected scan error must not discard every other
+            # account's results — record it as a gap and carry on.
+            print(color(f"Account: {sub_account[0]} | Unexpected error scanning "
+                        f"account: {e}", "red"))
+            all_scan_errors.append(
+                {"account": sub_account[0], "name": sub_account[1], "region": "-",
+                 "function": "(entire account)",
+                 "reason": f"account scan failed: {str(e)[:150]}"})
+            continue
         all_to_delete.extend(to_delete)
         all_skipped.extend(skipped)
         all_scan_errors.extend(scan_errors)
@@ -182,7 +193,18 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
 
     account_count = len({d["account"] for d in all_to_delete})
     if not confirm_deletion(len(all_to_delete), account_count, sys.stdin.isatty, input):
-        return _surface_early()
+        early = _surface_early()
+        if not sys.stdin.isatty():
+            # Non-interactive and we had functions pending: the tool refused to
+            # delete because it couldn't confirm. That is NOT success — exit
+            # non-zero so a cron/CI caller doesn't record it as a completed run.
+            print(color("Refused to delete without an interactive confirmation while "
+                        f"{len(all_to_delete)} function(s) were pending — exiting non-zero.",
+                        "red"))
+            return max(early, 1)
+        # Interactive operator deliberately declined: a clean abort, exit reflects
+        # only real gaps (scan errors), which _surface_early already returned.
+        return early
 
     # Delete phase - re-assume roles fresh (the scan can outlive 1h STS creds)
     deleted, already_gone, failed = [], [], []
@@ -199,6 +221,12 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                 print(color(f"Account: {account_id} | Can't assume role for delete, "
                             f"skipping. Error: {e}", "red"))
                 assume_role_failures.append((account_id, name, str(e)))
+                # These functions were in the plan but couldn't be deleted — record
+                # each as failed so the summary and exit code reflect the miss
+                # instead of silently under-reporting.
+                for it in items:
+                    failed.append(dict(it, reason=f"delete skipped - could not assume "
+                                                  f"role: {str(e)[:120]}"))
                 continue
             if not items:
                 continue
@@ -226,7 +254,12 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                             print(color(f"Account: {account_id} | Failed to delete "
                                         f"{it['function']} ({it['region']}): {e}", "red"))
                 except KeyboardInterrupt:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    try:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                    except TypeError:
+                        # cancel_futures was added in Python 3.9; on 3.8 fall back
+                        # to a plain shutdown so Ctrl+C still aborts cleanly.
+                        executor.shutdown(wait=False)
                     raise
     except KeyboardInterrupt:
         print(color("\nInterrupted - stopping. Summary of work done so far:", "yellow"))
@@ -251,12 +284,14 @@ def _run_cf_mode(sub_accounts, sts_client, management_account_id, regions,
                                      force_delete_failed, stack_name_contains)
     if assume_role_failures:
         print(color("=" * 60, "blue"))
-        print(color(f"{len(assume_role_failures)} account(s) unreachable (assume-role failed):", "red"))
-        for account_id, name, err in assume_role_failures:
-            print(color(f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}", "red"))
-    # Non-zero when any account could not be reached, so scripted/CI callers see
-    # a partial run as a failure (mirrors lambda mode's exit-code contract).
-    return len(assume_role_failures)
+        print(color(f"{len(assume_role_failures)} account(s) unreachable "
+                    f"(assume-role failed):", "yellow"))
+        for line in format_assume_role_failure_lines(assume_role_failures):
+            print(color(line, "yellow"))
+    # Unreachable accounts are reported but do not fail the exit code (they are a
+    # gap, not an operation failure). The underlying stack-delete helper does not
+    # surface per-stack failures, so CF mode has no operation-failure count.
+    return 0
 
 
 def main(accounts, aws_profile_name, regions=None, just_print=False,
@@ -286,15 +321,22 @@ def main(accounts, aws_profile_name, regions=None, just_print=False,
     print("Fetching all accounts connected to the organization")
     list_accounts = get_all_accounts(org_client)
     # Used to route the management account through the current session instead of
-    # assume-role. If DescribeOrganization is not permitted, degrade gracefully to
-    # the previous behavior (every account via assume-role) rather than crashing.
+    # assume-role (it cannot assume OrganizationAccountAccessRole into itself). If
+    # DescribeOrganization is not permitted, fall back to the caller's own account
+    # id: when the tool is run from the management account (the usual case) this
+    # still identifies it correctly, avoiding both a crash and a doomed assume-role.
     try:
         management_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
     except Exception as e:
-        management_account_id = None
-        print(color(f"Warning: could not determine the management account "
-                    f"(organizations:DescribeOrganization): {e}. Every account will be "
-                    f"accessed via assume-role.", "yellow"))
+        try:
+            management_account_id = sts_client.get_caller_identity()['Account']
+            print(color(f"Warning: DescribeOrganization not permitted ({e}); assuming the "
+                        f"current account {management_account_id} is the management "
+                        f"account.", "yellow"))
+        except Exception:
+            management_account_id = None
+            print(color(f"Warning: could not determine the management account ({e}); "
+                        f"every account will be accessed via assume-role.", "yellow"))
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     if account_filter:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in account_filter]

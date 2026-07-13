@@ -34,7 +34,15 @@ class TestPrintSummaryExitCount(unittest.TestCase):
             skipped_cfn=[{"account": "3", "function": "g", "stack": "s"}],
             assume_role_failures=[("9", "acc9", "denied")],
         )
-        self.assertEqual(code, 2)
+        # Only operation failures count toward the exit code; the unreachable
+        # account is reported but does not.
+        self.assertEqual(code, 1)
+
+    def test_unreachable_accounts_do_not_affect_exit_code(self):
+        code = print_lambda_summary(
+            deleted=[{"account": "1"}], already_gone=[], failed=[], skipped_cfn=[],
+            assume_role_failures=[("9", "acc9", "denied"), ("8", "acc8", "denied")])
+        self.assertEqual(code, 0)
 
     def test_clean_run_returns_zero(self):
         code = print_lambda_summary([{"account": "1"}], [], [], [], [])
