@@ -133,31 +133,38 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
     all_to_delete, all_skipped, all_scan_errors, assume_role_failures = [], [], [], []
 
     # Scan phase
-    for sub_account in sub_accounts:
-        try:
-            session = _session_for_account(sub_account, sts_client, management_account_id)
-        except Exception as e:
-            print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. "
-                        f"Error: {e}", "red"))
-            assume_role_failures.append((sub_account[0], sub_account[1], str(e)))
-            continue
-        print(color(f"Account: {sub_account[0]} | Scanning {len(regions)} regions", "blue"))
-        try:
-            to_delete, skipped, scan_errors = _scan_account_lambdas(
-                sub_account, session, regions, pattern)
-        except Exception as e:
-            # One account's unexpected scan error must not discard every other
-            # account's results — record it as a gap and carry on.
-            print(color(f"Account: {sub_account[0]} | Unexpected error scanning "
-                        f"account: {e}", "red"))
-            all_scan_errors.append(
-                {"account": sub_account[0], "name": sub_account[1], "region": "-",
-                 "function": "(entire account)",
-                 "reason": f"account scan failed: {str(e)[:150]}"})
-            continue
-        all_to_delete.extend(to_delete)
-        all_skipped.extend(skipped)
-        all_scan_errors.extend(scan_errors)
+    try:
+        for sub_account in sub_accounts:
+            try:
+                session = _session_for_account(sub_account, sts_client, management_account_id)
+            except Exception as e:
+                print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. "
+                            f"Error: {e}", "red"))
+                assume_role_failures.append((sub_account[0], sub_account[1], str(e)))
+                continue
+            print(color(f"Account: {sub_account[0]} | Scanning {len(regions)} regions", "blue"))
+            try:
+                to_delete, skipped, scan_errors = _scan_account_lambdas(
+                    sub_account, session, regions, pattern)
+            except Exception as e:
+                # One account's unexpected scan error must not discard every other
+                # account's results — record it as a gap and carry on.
+                print(color(f"Account: {sub_account[0]} | Unexpected error scanning "
+                            f"account: {e}", "red"))
+                all_scan_errors.append(
+                    {"account": sub_account[0], "name": sub_account[1], "region": "-",
+                     "function": "(entire account)",
+                     "reason": f"account scan failed: {str(e)[:150]}"})
+                continue
+            all_to_delete.extend(to_delete)
+            all_skipped.extend(skipped)
+            all_scan_errors.extend(scan_errors)
+    except KeyboardInterrupt:
+        # Match the delete phase: abort cleanly instead of dumping a traceback.
+        # The scan is incomplete, so do not proceed to deletion.
+        print(color("\nInterrupted during scan - aborting before any deletion.", "yellow"))
+        print_lambda_summary([], [], all_scan_errors, all_skipped, assume_role_failures)
+        return 1
 
     # Listing + plan file
     print_lambda_plan(all_to_delete, all_skipped)
@@ -208,6 +215,7 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
 
     # Delete phase - re-assume roles fresh (the scan can outlive 1h STS creds)
     deleted, already_gone, failed = [], [], []
+    interrupted = False
     by_account = {}
     for d in all_to_delete:
         by_account.setdefault((d["account"], d["name"]), []).append(d)
@@ -220,15 +228,13 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
             except Exception as e:
                 print(color(f"Account: {account_id} | Can't assume role for delete, "
                             f"skipping. Error: {e}", "red"))
-                assume_role_failures.append((account_id, name, str(e)))
-                # These functions were in the plan but couldn't be deleted — record
-                # each as failed so the summary and exit code reflect the miss
-                # instead of silently under-reporting.
+                # These functions were planned but couldn't be deleted — record each
+                # as failed (a real operation failure) so the summary and exit code
+                # reflect the miss. Do NOT also add the account to the 'unreachable'
+                # list: that would double-report the same failure across two counters.
                 for it in items:
                     failed.append(dict(it, reason=f"delete skipped - could not assume "
                                                   f"role: {str(e)[:120]}"))
-                continue
-            if not items:
                 continue
             # Warm the session's client-creation caches single-threaded; boto3 Session
             # is not thread-safe for concurrent first-time client creation.
@@ -262,10 +268,25 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
                         executor.shutdown(wait=False)
                     raise
     except KeyboardInterrupt:
+        interrupted = True
         print(color("\nInterrupted - stopping. Summary of work done so far:", "yellow"))
 
-    return print_lambda_summary(deleted, already_gone, failed + all_scan_errors,
-                                all_skipped, assume_role_failures)
+    # Account for functions that were planned but never attempted (e.g. the run
+    # was interrupted before reaching them), so an aborted run isn't mistaken for
+    # a completed one.
+    attempted = {(x["account"], x["region"], x["function"])
+                 for x in deleted + already_gone + failed}
+    not_attempted = [x for x in all_to_delete
+                     if (x["account"], x["region"], x["function"]) not in attempted]
+    if not_attempted:
+        print(color(f"{len(not_attempted)} planned function(s) were NOT attempted "
+                    f"(run interrupted before reaching them); re-run to finish them.",
+                    "yellow"))
+
+    rc = print_lambda_summary(deleted, already_gone, failed + all_scan_errors,
+                              all_skipped, assume_role_failures)
+    # An interrupted run left work undone — never report it as a clean success.
+    return max(rc, 1) if interrupted else rc
 
 
 def _run_cf_mode(sub_accounts, sts_client, management_account_id, regions,
@@ -333,10 +354,11 @@ def main(accounts, aws_profile_name, regions=None, just_print=False,
             print(color(f"Warning: DescribeOrganization not permitted ({e}); assuming the "
                         f"current account {management_account_id} is the management "
                         f"account.", "yellow"))
-        except Exception:
+        except Exception as e2:
             management_account_id = None
-            print(color(f"Warning: could not determine the management account ({e}); "
-                        f"every account will be accessed via assume-role.", "yellow"))
+            print(color(f"Warning: could not determine the management account "
+                        f"(DescribeOrganization: {e}; caller identity: {e2}); every "
+                        f"account will be accessed via assume-role.", "yellow"))
     sub_accounts = [(a["Id"], a["Name"]) for a in list_accounts if a["Status"] == "ACTIVE"]
     if account_filter:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in account_filter]

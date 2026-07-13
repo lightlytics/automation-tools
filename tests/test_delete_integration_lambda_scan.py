@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import unittest
@@ -70,6 +72,35 @@ class TestLambdaScanErrorsAffectExit(unittest.TestCase):
                                       regions=["us-east-1"], pattern="stream", just_print=True)
 
         self.assertGreaterEqual(rc, 1)
+
+    def test_delete_phase_assume_role_failure_counted_once_as_failed(self):
+        accounts = [("111", "acct-a")]
+
+        def fake_scan(sub_account, session, regions, pattern):
+            return ([{"account": "111", "name": "acct-a", "region": "us-east-1",
+                      "function": "target"}], [], [])
+
+        # Session succeeds during scan, then fails when re-assumed for the delete.
+        outcomes = [object(), Exception("creds expired")]
+
+        def fake_session(sub_account, sts_client, mgmt):
+            r = outcomes.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        buf = io.StringIO()
+        with patch.object(mod, "_session_for_account", side_effect=fake_session), \
+                patch.object(mod, "_scan_account_lambdas", side_effect=fake_scan), \
+                patch.object(mod, "confirm_deletion", return_value=True), \
+                contextlib.redirect_stdout(buf):
+            rc = mod._run_lambda_mode(accounts, sts_client=None, management_account_id="999",
+                                      regions=["us-east-1"], pattern="target", just_print=False)
+
+        out = buf.getvalue()
+        self.assertEqual(rc, 1)                        # the planned function counts as one failure
+        self.assertIn("1 failed", out)
+        self.assertIn("0 accounts unreachable", out)   # NOT also double-reported as unreachable
 
 
 if __name__ == "__main__":
