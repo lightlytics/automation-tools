@@ -214,17 +214,26 @@ def _run_lambda_mode(sub_accounts, sts_client, management_account_id, regions,
 
 def _run_cf_mode(sub_accounts, sts_client, management_account_id, regions,
                  just_print, force_delete_failed, stack_name_contains):
+    assume_role_failures = []
     for sub_account in sub_accounts:
         try:
             session = _session_for_account(sub_account, sts_client, management_account_id)
         except Exception as e:
             print(color(f"Account: {sub_account[0]} | Can't assume role, skipping. "
                         f"Error: {e}", "red"))
+            assume_role_failures.append((sub_account[0], sub_account[1], str(e)))
             continue
         print(color(f"Account: {sub_account[0]} | Session initialized", "green"))
         delete_stacks_in_all_regions(sub_account, session, regions, just_print,
                                      force_delete_failed, stack_name_contains)
-    return 0
+    if assume_role_failures:
+        print(color("=" * 60, "blue"))
+        print(color(f"{len(assume_role_failures)} account(s) unreachable (assume-role failed):", "red"))
+        for account_id, name, err in assume_role_failures:
+            print(color(f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}", "red"))
+    # Non-zero when any account could not be reached, so scripted/CI callers see
+    # a partial run as a failure (mirrors lambda mode's exit-code contract).
+    return len(assume_role_failures)
 
 
 def main(accounts, aws_profile_name, regions=None, just_print=False,
