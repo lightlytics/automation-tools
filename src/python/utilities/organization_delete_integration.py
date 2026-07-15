@@ -329,8 +329,10 @@ def _run_cf_mode(sub_accounts, sts_client, management_account_id, regions,
         for line in format_assume_role_failure_lines(assume_role_failures):
             print(color(line, "yellow"))
     # Unreachable accounts are reported but do not fail the exit code (they are a
-    # gap, not an operation failure). The underlying stack-delete helper does not
-    # surface per-stack failures, so CF mode has no operation-failure count.
+    # gap, not an operation failure). CF mode does not compute a per-stack failure
+    # count: delete_stacks_in_all_regions only *initiates* deletion (asynchronous,
+    # no waiter), so stack-deletion outcomes are never observed here; a failure to
+    # initiate a delete propagates as an exception rather than a counted failure.
     return 0
 
 

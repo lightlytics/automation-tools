@@ -26,7 +26,7 @@ class TestWritePlanFile(unittest.TestCase):
 
 
 class TestPrintSummaryExitCount(unittest.TestCase):
-    def test_returns_failure_plus_assume_role_count(self):
+    def test_only_operation_failures_count_toward_exit_code(self):
         code = print_lambda_summary(
             deleted=[{"account": "1"}],
             already_gone=[],
