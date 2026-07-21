@@ -3,6 +3,7 @@ import datetime
 import time
 from termcolor import colored as color
 import os
+from botocore.config import Config
 
 def get_all_accounts(org_client):
     list_accounts = []
@@ -333,3 +334,177 @@ def filter_ll_stacks_from_url(sub_account_session, region, ll_url, return_only_n
             return ll_stacks_to_return
     except Exception:
         return []
+
+
+CFN_STACK_NAME_TAG = "aws:cloudformation:stack-name"
+LAMBDA_MIN_PATTERN_LEN = 3
+
+
+def validate_lambda_pattern(pattern):
+    """Return the stripped pattern, or raise ValueError if it is missing or
+    shorter than LAMBDA_MIN_PATTERN_LEN characters (guards against a typo like
+    's' matching hundreds of functions)."""
+    if pattern is None or len(pattern.strip()) < LAMBDA_MIN_PATTERN_LEN:
+        raise ValueError(
+            f"--lambda_name_contains must be at least {LAMBDA_MIN_PATTERN_LEN} characters")
+    return pattern.strip()
+
+
+def lambda_name_matches(function_name, pattern):
+    """Case-insensitive substring match of pattern within function_name."""
+    return pattern.lower() in function_name.lower()
+
+
+def is_cfn_managed(tags):
+    """True if the Lambda's tags mark it as CloudFormation-managed."""
+    return CFN_STACK_NAME_TAG in (tags or {})
+
+
+def build_account_rollup(results):
+    """Group delete-plan results by account into (account_id, account_name, count)
+    tuples, sorted by count descending then account id, so the accounts losing the
+    most functions appear first."""
+    counts = {}
+    names = {}
+    for r in results:
+        counts[r["account"]] = counts.get(r["account"], 0) + 1
+        names[r["account"]] = r.get("name", "")
+    rollup = [(acc, names[acc], cnt) for acc, cnt in counts.items()]
+    rollup.sort(key=lambda t: (-t[2], t[0]))
+    return rollup
+
+
+def format_plan_lines(results):
+    """One 'account | region | function' line per result, sorted for stable output
+    and easy diffing/grepping of the written plan file."""
+    return [f"{r['account']} | {r['region']} | {r['function']}"
+            for r in sorted(results, key=lambda r: (r["account"], r["region"], r["function"]))]
+
+
+LAMBDA_CLIENT_CONFIG = Config(
+    connect_timeout=15,
+    read_timeout=60,
+    retries={"max_attempts": 10, "mode": "adaptive"},
+)
+
+
+def scan_lambdas_in_region(sub_account_session, region, pattern):
+    """List Lambda functions in a region, keep those whose name matches pattern,
+    and split them into (to_delete, skipped_cfn, scan_errors). A function tagged
+    as CloudFormation-managed goes to skipped_cfn with its owning stack name; it
+    is never deleted. list_tags is called only for name-matched functions, and a
+    per-function tag failure never aborts the region scan: the function is left
+    out of to_delete (we can't confirm it isn't CFN-managed, so deleting it would
+    be unsafe) and recorded in scan_errors so the operator sees the gap."""
+    client = sub_account_session.client("lambda", region_name=region, config=LAMBDA_CLIENT_CONFIG)
+    to_delete, skipped_cfn, scan_errors = [], [], []
+    for page in client.get_paginator("list_functions").paginate():
+        for fn in page["Functions"]:
+            name = fn["FunctionName"]
+            if not lambda_name_matches(name, pattern):
+                continue
+            try:
+                tags = client.list_tags(Resource=fn["FunctionArn"]).get("Tags", {})
+            except Exception as e:
+                scan_errors.append(
+                    {"region": region, "function": name,
+                     "reason": f"could not read tags, left out of plan: {str(e)[:150]}"})
+                continue
+            if is_cfn_managed(tags):
+                skipped_cfn.append(
+                    {"region": region, "function": name, "stack": tags[CFN_STACK_NAME_TAG]})
+            else:
+                to_delete.append({"region": region, "function": name})
+    return to_delete, skipped_cfn, scan_errors
+
+
+def delete_lambda_function(sub_account_session, region, function_name):
+    """Delete a Lambda function. Returns 'deleted', or 'already gone' if it was
+    already removed between the scan and now. Other errors propagate to the caller."""
+    client = sub_account_session.client("lambda", region_name=region, config=LAMBDA_CLIENT_CONFIG)
+    try:
+        client.delete_function(FunctionName=function_name)
+        return "deleted"
+    except client.exceptions.ResourceNotFoundException:
+        return "already gone"
+
+
+def confirm_deletion(total, account_count, isatty_fn, input_fn):
+    """Interactive safety gate. Returns True only on an interactive terminal when
+    the operator types exactly 'delete'. On a non-TTY (nohup/pipe/CI) it refuses
+    instead of blocking forever on input(); EOF/Ctrl+C also abort. isatty_fn and
+    input_fn are injected so this is unit-testable."""
+    if not isatty_fn():
+        print(color(
+            "No interactive terminal detected — refusing to delete. "
+            "Run interactively, or use --just_print to preview.", "red"))
+        return False
+    try:
+        answer = input_fn(
+            f"About to delete {total} lambda functions across {account_count} accounts. "
+            f"Type 'delete' to proceed: ")
+    except (EOFError, KeyboardInterrupt):
+        print(color("\nAborted — nothing was deleted.", "yellow"))
+        return False
+    if answer.strip() == "delete":
+        return True
+    print(color("Confirmation did not match 'delete' — nothing was deleted.", "yellow"))
+    return False
+
+
+def write_plan_file(results, path):
+    """Write the full delete plan (one 'account | region | function' per line) to
+    path so it can be grepped, diffed, shared, and kept as an audit record."""
+    with open(path, "w") as f:
+        f.write("\n".join(format_plan_lines(results)) + "\n")
+
+
+def print_lambda_plan(results, skipped_cfn):
+    """Print the delete plan: a per-account roll-up (biggest blast radius first),
+    the grand total, the full flat table, and the CFN-managed functions skipped."""
+    rollup = build_account_rollup(results)
+    print(color("Lambda functions to delete (per account):", "blue"))
+    for account_id, name, count in rollup:
+        print(f"  {account_id} ({name})  {count} functions")
+    print(color(
+        f"Total: {len(results)} functions across {len(rollup)} accounts", "blue"))
+    if results:
+        print(color("Full list:", "blue"))
+        for line in format_plan_lines(results):
+            print(f"  {line}")
+    if skipped_cfn:
+        print(color(
+            f"Skipped {len(skipped_cfn)} CloudFormation-managed function(s) "
+            f"(not deleted):", "yellow"))
+        for s in sorted(skipped_cfn, key=lambda x: (x["account"], x["region"], x["function"])):
+            print(f"  {s['account']} | {s['region']} | {s['function']} "
+                  f"(stack: {s['stack']})")
+
+
+def format_assume_role_failure_lines(assume_role_failures):
+    """Single source of the per-account 'ASSUME-ROLE FAILED' line format, shared
+    by print_lambda_summary and the CF-mode summary so the two cannot drift."""
+    return [f"  ASSUME-ROLE FAILED | account {account_id} ({name}) | {err}"
+            for account_id, name, err in assume_role_failures]
+
+
+def print_lambda_summary(deleted, already_gone, failed, skipped_cfn, assume_role_failures):
+    """Print end-of-run counts with per-item detail for failures and an explicit
+    list of accounts where assume-role failed (copy them into --accounts for a
+    re-run). Returns len(failed) — the count of items that should drive a
+    non-zero exit. Callers deliberately include scan gaps (regions/functions
+    whose state couldn't be read) in `failed`, so those count too. Unreachable
+    accounts are reported separately and do NOT affect the exit code (an account
+    we merely couldn't reach is a reported gap, not an operation failure)."""
+    print(color("=" * 60, "blue"))
+    print(color(
+        f"Run summary: {len(deleted)} deleted | {len(already_gone)} already gone | "
+        f"{len(failed)} failed | {len(skipped_cfn)} skipped (CFN-managed) | "
+        f"{len(assume_role_failures)} accounts unreachable (assume-role failed)", "blue"))
+    for r in failed:
+        print(color(
+            f"  FAILED | account {r['account']} | {r['region']} | {r['function']} | "
+            f"{r['reason']}", "red"))
+    for line in format_assume_role_failure_lines(assume_role_failures):
+        print(color(line, "yellow"))
+    return len(failed)
