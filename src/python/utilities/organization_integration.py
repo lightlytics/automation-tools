@@ -322,7 +322,9 @@ def integrate_sub_account(
         # Only an empty lookup means "not in StreamSecurity yet". This used to be
         # an `except IndexError: pass` around the whole block below, which sent an
         # existing account to create_account on any unrelated IndexError.
-        matching_accounts = [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]]
+        # raise_on_error: a failed API call must fail the account, not read as "not found".
+        matching_accounts = [acc for acc in graph_client.get_accounts(raise_on_error=True)
+                             if sub_account[0] == acc["cloud_account_id"]]
         if matching_accounts:
             sub_account_information = matching_accounts[0]
             if sub_account_information["status"] == "UNINITIALIZED":

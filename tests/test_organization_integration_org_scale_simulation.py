@@ -125,7 +125,7 @@ class FakeGraphClient:
         self.registry = registry
         self._uninitialized_poll_count = {}
 
-    def get_accounts(self):
+    def get_accounts(self, raise_on_error=False):
         out = []
         for acc_id, st in self.registry.items():
             if not st.get("in_registry"):

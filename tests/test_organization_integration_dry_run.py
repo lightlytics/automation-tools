@@ -162,7 +162,7 @@ class TestIntegrateSubAccountDryRunEndToEnd(unittest.TestCase):
     def test_brand_new_account_dry_run_creates_zero_stacks_but_registers_account(self):
         sts_client = MagicMock()
         graph_client = MagicMock()
-        # First get_accounts() call (existence check) -> IndexError so
+        # First get_accounts() call (existence check) -> no match, so
         # ll_integrated stays False and create_account() runs (for real -
         # that's the one real backend side effect dry_run still performs);
         # second call (fetching account_information) returns what a real

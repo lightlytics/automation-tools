@@ -159,9 +159,12 @@ def integrate_sub_account(
 
         print(color(f"Account: {sub_account[0]} | Checking if integration already exists", "blue"))
         ll_integrated = False
-        try:
-            sub_account_information = \
-                [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]][0]
+        # Only an empty lookup means "not in StreamSecurity yet": an IndexError elsewhere
+        # below, or a failed API call, must fail the account rather than re-create it.
+        matching_accounts = [acc for acc in graph_client.get_accounts(raise_on_error=True)
+                             if sub_account[0] == acc["cloud_account_id"]]
+        if matching_accounts:
+            sub_account_information = matching_accounts[0]
             if sub_account_information["status"] == "UNINITIALIZED":
                 ll_integrated = True
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
@@ -190,7 +193,9 @@ def integrate_sub_account(
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
-                    potential_regions = regions_to_integrate
+                    # A copy: the same list is shared by every account (and thread),
+                    # and it gets extend()'d below.
+                    potential_regions = list(regions_to_integrate)
                 else:
                     potential_regions = get_active_regions(sub_account_session, regions)
                 if sorted(current_regions) != sorted(potential_regions):
@@ -213,9 +218,9 @@ def integrate_sub_account(
                 if len(regions_to_integrate) > 0:
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
-                    deploy_all_collection_stacks(
+                    _raise_on_submit_failure(sub_account, deploy_all_collection_stacks(
                         regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account,
-                        custom_tags=custom_tags)
+                        custom_tags=custom_tags))
                 else:
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
                 return
@@ -224,8 +229,6 @@ def integrate_sub_account(
                           f"status at StreamSecurity, remove it and try again"
                 print(color(err_msg, "red"))
                 raise Exception(err_msg)
-        except IndexError:
-            pass
 
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
@@ -277,8 +280,8 @@ def integrate_sub_account(
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
-        deploy_all_collection_stacks(
-            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags)
+        _raise_on_submit_failure(sub_account, deploy_all_collection_stacks(
+            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags))
 
         return
 

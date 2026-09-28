@@ -1,6 +1,6 @@
 """
-The Lambda (lambda/organization_integration/app.py) must still count an account
-as failed when a response or EKS audit-logs stack fails to submit.
+The Lambda (lambda/organization_integration/app.py) must count an account as
+failed when a response, EKS audit-logs or collection stack fails to submit.
 
 Before this PR, create_stack raised straight out of deploy_response_stack /
 deploy_eks_audit_logs_stacks and lambda_handler recorded the failure. Those
@@ -63,7 +63,7 @@ class TestLambdaHandlerReportsSubmitFailures(unittest.TestCase):
     def setUpClass(cls):
         cls.app = _load_lambda_app_module()
 
-    def _run(self, response_result, eks_result):
+    def _run(self, response_result, eks_result, collection_result=None):
         app = self.app
         sub_account = ("123456789012", "acct-name")
         graph_client = MagicMock()
@@ -78,7 +78,7 @@ class TestLambdaHandlerReportsSubmitFailures(unittest.TestCase):
                 patch.object(app, "deploy_response_stack", return_value=response_result), \
                 patch.object(app, "deploy_eks_audit_logs_stacks", return_value=eks_result), \
                 patch.object(app, "update_regions", return_value=True) as update_regions, \
-                patch.object(app, "deploy_all_collection_stacks", return_value=[]):
+                patch.object(app, "deploy_all_collection_stacks", return_value=collection_result or []):
             boto3_mock.Session.return_value = session
             app.integrate_sub_account(
                 sub_account, MagicMock(), graph_client, ["us-east-1"], "abc123",
@@ -93,6 +93,12 @@ class TestLambdaHandlerReportsSubmitFailures(unittest.TestCase):
     def test_eks_submit_failure_fails_the_account(self):
         with self.assertRaisesRegex(Exception, "Failed to submit stack"):
             self._run(_record("response"), [_record("eks_audit", "SUBMIT_FAILED")])
+
+    def test_collection_submit_failure_fails_the_account(self):
+        # Before this PR the collection helper's thread results were never read,
+        # so these failures were lost entirely; the records now make them visible.
+        with self.assertRaisesRegex(Exception, "collection in us-east-1"):
+            self._run(_record("response"), [], [_record("collection", "SUBMIT_FAILED")])
 
     def test_all_submitted_continues_to_region_update(self):
         update_regions = self._run(_record("response"), [_record("eks_audit")])
@@ -117,6 +123,55 @@ class TestLambdaHandlerReportsSubmitFailures(unittest.TestCase):
                     response=True, eks_audit_logs=True, environment="acme", domain="streamsec.io")
         self.assertEqual(response.call_args.args[0], "https://acme.streamsec.io")
         self.assertEqual(eks.call_args.args[0], "https://acme.streamsec.io")
+
+
+
+class TestLambdaExistingAccountIsNeverRecreated(unittest.TestCase):
+    """Same fixes as the CLI: only an empty lookup leads to create_account."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _load_lambda_app_module()
+
+    def _run_ready(self, graph_client, regions_to_integrate=None, **patches):
+        app = self.app
+        with patch.object(app, "boto3"), \
+                patch.object(app, "get_active_regions", return_value=["us-east-1"]), \
+                patch.object(app, "deploy_all_collection_stacks", return_value=[]), \
+                patch.object(app, "update_regions", **patches.get("update_regions", {"return_value": True})):
+            app.integrate_sub_account(
+                ("123456789012", "acct-name"), MagicMock(), graph_client, ["us-east-1"], "abc123",
+                None, regions_to_integrate, "OrganizationAccountAccessRole", "123456789012",
+                environment="acme", domain="streamsec.io")
+
+    def _ready_graph_client(self, cloud_regions):
+        graph_client = MagicMock()
+        graph_client.get_accounts.return_value = [{
+            "cloud_account_id": "123456789012", "status": "READY", "cloud_regions": cloud_regions,
+            "display_name": "acct-name", "realtime_regions": [{"region_name": r} for r in cloud_regions]}]
+        graph_client.get_account_response_config.return_value = {"remediation": None}
+        return graph_client
+
+    def test_index_error_in_ready_branch_does_not_create_account(self):
+        graph_client = self._ready_graph_client(["us-east-1", "eu-west-1"])
+        with self.assertRaises(Exception):
+            self._run_ready(graph_client, update_regions={"side_effect": IndexError("list index out of range")})
+        graph_client.create_account.assert_not_called()
+
+    def test_listing_error_does_not_create_account(self):
+        graph_client = MagicMock()
+        graph_client.get_accounts.side_effect = Exception("Could not list accounts: 504")
+        with self.assertRaises(Exception):
+            self._run_ready(graph_client)
+        graph_client.get_accounts.assert_called_once_with(raise_on_error=True)
+        graph_client.create_account.assert_not_called()
+
+    def test_shared_regions_list_is_not_mutated(self):
+        # One list object is passed to every account; an account with extra
+        # registered regions must not leak them into the next account's run.
+        shared_regions = ["us-east-1"]
+        self._run_ready(self._ready_graph_client(["us-east-1", "eu-west-1"]), regions_to_integrate=shared_regions)
+        self.assertEqual(shared_regions, ["us-east-1"])
 
 
 if __name__ == "__main__":

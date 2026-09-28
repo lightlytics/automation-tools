@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.python.common.graph_common import GraphCommon
 from src.python.utilities import organization_integration as oi
 
 
@@ -56,6 +57,45 @@ class TestUnrelatedIndexErrorDoesNotCreateAccount(unittest.TestCase):
                     "OrganizationAccountAccessRole", "111111111111")
 
         graph_client.create_account.assert_called_once()
+
+
+class TestFailedAccountListingDoesNotCreateAccount(unittest.TestCase):
+    """GraphCommon.get_accounts() returns [] on an errored/5xx response. The
+    existence check must not read that as "not in StreamSecurity" and re-create
+    an existing account; it asks for raise_on_error and fails the account."""
+
+    def test_listing_error_fails_the_account_without_create_account(self):
+        graph_client = MagicMock()
+        graph_client.get_accounts.side_effect = Exception("Could not list accounts: 504")
+        with patch.object(oi, "boto3"):
+            with self.assertRaisesRegex(Exception, "Could not list accounts"):
+                oi.integrate_sub_account(
+                    "https://example.streamsec.io", ("111111111111", "acct"), MagicMock(),
+                    graph_client, ["us-east-1"], "abc123", None, None,
+                    "OrganizationAccountAccessRole", "111111111111")
+        graph_client.get_accounts.assert_called_once_with(raise_on_error=True)
+        graph_client.create_account.assert_not_called()
+
+
+class TestGetAccountsRaiseOnError(unittest.TestCase):
+    def _client(self, graph_response):
+        client = GraphCommon.__new__(GraphCommon)   # skip login
+        client.url = "https://example.streamsec.io/graphql"
+        client.graph_query = MagicMock(return_value=graph_response)
+        return client
+
+    def test_errored_response_raises_when_asked(self):
+        for response in (None, {"errors": [{"message": "Gateway Time-out"}]}, {"data": {"accounts": None}}):
+            with self.subTest(response=response):
+                with self.assertRaises(Exception):
+                    self._client(response).get_accounts(raise_on_error=True)
+
+    def test_errored_response_still_returns_empty_list_by_default(self):
+        with patch("builtins.print"):
+            self.assertEqual(self._client(None).get_accounts(), [])
+
+    def test_genuinely_empty_list_does_not_raise(self):
+        self.assertEqual(self._client({"data": {"accounts": []}}).get_accounts(raise_on_error=True), [])
 
 
 class TestMainPassesNormalizedApiUrl(unittest.TestCase):

@@ -1206,7 +1206,7 @@ class TestLambdaAppDeployInitStackCallSite(unittest.TestCase):
         org_account_id = "123456789012"  # same as sub_account -> no assume-role needed
         sts_client = MagicMock()
         graph_client = MagicMock()
-        # First get_accounts() call: no existing integration -> IndexError -> pass.
+        # First get_accounts() call: no existing integration -> account gets created.
         # Second get_accounts() call: used to fetch account_information.
         graph_client.get_accounts.side_effect = [
             [],

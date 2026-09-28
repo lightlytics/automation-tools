@@ -117,8 +117,10 @@ class GraphCommon(object):
             raise Exception("Can't find WS")
 
     # Account methods
-    def get_accounts(self):
+    def get_accounts(self, raise_on_error=False):
         """ Get all accounts.
+            :param raise_on_error (bool) - Raise on a null/invalid/errored response instead
+                of returning []. Callers that treat "not found" as "create it" need this.
             :returns (list) - Integrations in the environment.
         """
         operation = 'Accounts'
@@ -133,6 +135,8 @@ class GraphCommon(object):
         accounts = (result.get('data') or {}).get('accounts') \
             if isinstance(result, dict) and 'errors' not in result else None
         if accounts is None or not isinstance(accounts, list):
+            if raise_on_error:
+                raise Exception(f"Could not list accounts from {self.url}: {str(result)[:200]}")
             if not getattr(self, "_warned_empty_accounts", False):
                 print(f"Warning: null/invalid accounts response from {self.url}; treating as no accounts.")
                 self._warned_empty_accounts = True

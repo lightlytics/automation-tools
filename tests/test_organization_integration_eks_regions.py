@@ -26,7 +26,7 @@ class TestEksAuditLogsActiveRegions(unittest.TestCase):
                                eks_records_return=None):
         sts_client = MagicMock()
         graph_client = MagicMock()
-        # First get_accounts() call (existence check) -> IndexError, so
+        # First get_accounts() call (existence check) -> no match, so
         # ll_integrated stays False and create_account() runs; second call
         # (fetching account_information) returns the backend's own stale
         # cloud_regions, mirroring what a real GraphQL create_account
