@@ -48,14 +48,15 @@ def _warn_unregistered_eks_regions(sub_account, eks_records, registered_regions)
     DRY_RUN records still warn - previewing the enrichment gap is the point
     of a dry run - but with the conditional verb: claiming something was
     "deployed" in the one mode whose purpose is deploying nothing would be
-    exactly the false reporting this PR exists to eliminate."""
+    exactly the false reporting this PR exists to eliminate. A real run says
+    "submitted": this runs before the sweep, when the stack may still roll back."""
     registered = set(registered_regions)
     verbs = {}
     for r in eks_records:
         if r.get("final_status") == "SUBMIT_FAILED" or r["region"] in registered:
             continue
         verbs[r["region"]] = ("would be deployed" if r.get("final_status") == "DRY_RUN"
-                              else "deployed")
+                              else "submitted")
     for region in sorted(verbs):
         print(color(
             f"Account: {sub_account[0]} | EKS audit collector {verbs[region]} in {region}, "

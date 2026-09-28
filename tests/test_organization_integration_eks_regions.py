@@ -284,7 +284,7 @@ class TestUnregisteredEksRegionWarning(unittest.TestCase):
                 ["us-east-1"])
         printed = self._printed(mock_print)
         self.assertIn("EKS audit collector would be deployed in eu-west-1", printed)
-        self.assertNotIn("collector deployed in", printed)
+        self.assertNotIn("collector submitted in", printed)
 
     def test_submit_failed_records_do_not_warn(self):
         # A SUBMIT_FAILED record deployed nothing - its failure is already
@@ -311,8 +311,8 @@ class TestUnregisteredEksRegionWarning(unittest.TestCase):
                 org_regions=["us-east-1", "us-west-2", "eu-west-1"],
                 eks_records_return=[_eks_record("eu-west-1"), _eks_record("us-east-1")])
         printed = self._printed(mock_print)
-        self.assertIn("EKS audit collector deployed in eu-west-1", printed)
-        self.assertNotIn("EKS audit collector deployed in us-east-1", printed)
+        self.assertIn("EKS audit collector submitted in eu-west-1", printed)
+        self.assertNotIn("EKS audit collector submitted in us-east-1", printed)
 
     def test_ready_account_warning_compares_against_union_of_current_and_potential(self):
         # The READY branch registers the UNION of the account's current
@@ -328,8 +328,8 @@ class TestUnregisteredEksRegionWarning(unittest.TestCase):
                 org_regions=["us-east-1", "us-west-2", "eu-west-1"],
                 eks_records_return=[_eks_record("eu-west-1"), _eks_record("us-west-2")])
         printed = self._printed(mock_print)
-        self.assertIn("EKS audit collector deployed in eu-west-1", printed)
-        self.assertNotIn("EKS audit collector deployed in us-west-2", printed)
+        self.assertIn("EKS audit collector submitted in eu-west-1", printed)
+        self.assertNotIn("EKS audit collector submitted in us-west-2", printed)
 
 
 
