@@ -381,9 +381,18 @@ def deploy_eks_audit_logs_stacks(
     ]
     
     for region in eks_audit_logs_regions:
-        region_client = sub_account_session.client('lambda', region_name=region)
-        region_cloudformation_client = sub_account_session.client('cloudformation', region_name=region)
         stack_name = f"StreamSecurity-eks-audit-logs-{region}-{random_int}"
+        # Client construction raises for a malformed region name (e.g. " eu-west-1");
+        # keep that to this region instead of losing the records collected so far.
+        try:
+            region_client = sub_account_session.client('lambda', region_name=region)
+            region_cloudformation_client = sub_account_session.client('cloudformation', region_name=region)
+        except Exception as e:
+            print(color(f"Account: {sub_account[0]} | Could not create clients for {region}: {e}", "red"))
+            records.append(_stack_record(
+                sub_account, region, "eks_audit", stack_name, None,
+                final_status="SUBMIT_FAILED", status_reason=str(e)[:200]))
+            continue
 
         # Only ResourceNotFoundException means "the lambda doesn't exist,
         # proceed to deploy" - any OTHER exception from the existence check

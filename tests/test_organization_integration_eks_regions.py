@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.python.common import boto_common
 from src.python.utilities import organization_integration as oi
 
 
@@ -329,6 +330,33 @@ class TestUnregisteredEksRegionWarning(unittest.TestCase):
         printed = self._printed(mock_print)
         self.assertIn("EKS audit collector deployed in eu-west-1", printed)
         self.assertNotIn("EKS audit collector deployed in us-west-2", printed)
+
+
+
+class TestEksClientConstructionFailureIsolated(unittest.TestCase):
+    def test_bad_region_client_does_not_lose_other_regions_records(self):
+        not_found = type("ResourceNotFoundException", (Exception,), {})
+        lambda_client = MagicMock()
+        lambda_client.exceptions.ResourceNotFoundException = not_found
+        lambda_client.get_function.side_effect = not_found()
+        cf_client = MagicMock()
+        cf_client.create_stack.return_value = {"StackId": "sid-us-east-1"}
+
+        def client(service, region_name=None, **kw):
+            if region_name != "us-east-1":
+                raise ValueError(f"Provided region_name '{region_name}' doesn't match a supported format.")
+            return lambda_client if service == "lambda" else cf_client
+        session = MagicMock()
+        session.client.side_effect = client
+
+        with patch("builtins.print"):
+            records = boto_common.deploy_eks_audit_logs_stacks(
+                "https://acme.streamsec.io", {"lightlytics_collection_token": "tok", "cloud_regions": []},
+                session, ("111111111111", "acct"), ["us-east-1", " eu-west-1"], "abc123", None, wait=False)
+
+        by_region = {r["region"]: r for r in records}
+        self.assertEqual(by_region["us-east-1"]["stack_id"], "sid-us-east-1")
+        self.assertEqual(by_region[" eu-west-1"]["final_status"], "SUBMIT_FAILED")
 
 
 if __name__ == "__main__":

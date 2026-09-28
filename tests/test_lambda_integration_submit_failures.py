@@ -174,5 +174,55 @@ class TestLambdaExistingAccountIsNeverRecreated(unittest.TestCase):
         self.assertEqual(shared_regions, ["us-east-1"])
 
 
+
+class TestLambdaEksRegionsAndParsing(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _load_lambda_app_module()
+
+    def test_new_account_eks_detection_uses_active_regions(self):
+        # account_information["cloud_regions"] holds only the creation-time region;
+        # auto-detection must scan the detected active regions instead.
+        app = self.app
+        sub_account = ("123456789012", "acct-name")
+        graph_client = MagicMock()
+        graph_client.get_accounts.side_effect = [
+            [], [{"cloud_account_id": sub_account[0], "cloud_regions": ["us-east-1"]}]]
+        graph_client.create_account.return_value = True
+        with patch.object(app, "boto3"), \
+                patch.object(app, "deploy_init_stack", return_value=(True, _record("init"))), \
+                patch.object(app, "get_active_regions", return_value=["us-east-1", "eu-west-1"]), \
+                patch.object(app, "deploy_eks_audit_logs_stacks", return_value=[]) as eks, \
+                patch.object(app, "update_regions", return_value=True), \
+                patch.object(app, "deploy_all_collection_stacks", return_value=[]):
+            app.integrate_sub_account(
+                sub_account, MagicMock(), graph_client, ["us-east-1", "eu-west-1"], "abc123",
+                None, None, "OrganizationAccountAccessRole", sub_account[0],
+                eks_audit_logs=True, environment="acme", domain="streamsec.io")
+        passed_account_information = eks.call_args.args[1]
+        self.assertEqual(passed_account_information["cloud_regions"], ["us-east-1", "eu-west-1"])
+
+    def test_region_env_vars_are_stripped(self):
+        app = self.app
+        env = {"ENVIRONMENT": "acme", "API_TOKEN": "t", "WS_ID": "ws", "PARALLEL": "0",
+               "REGIONS": "us-east-1, eu-west-1,", "EKS_AUDIT_LOGS": "true",
+               "EKS_AUDIT_LOGS_REGIONS": " us-east-1 , eu-west-1"}
+        sts = MagicMock()
+        sts.get_caller_identity.return_value = {"Account": "123456789012"}
+        ec2 = MagicMock()
+        ec2.describe_regions.return_value = {"Regions": [{"RegionName": "us-east-1"}]}
+        with patch.dict(os.environ, env, clear=False), \
+                patch.object(app, "GraphCommon"), \
+                patch.object(app, "boto3") as boto3_mock, \
+                patch.object(app, "get_all_accounts",
+                             return_value=[{"Id": "123456789012", "Name": "a", "Status": "ACTIVE"}]), \
+                patch.object(app, "integrate_sub_account") as integrate:
+            boto3_mock.client.side_effect = lambda service, **kw: {"sts": sts, "ec2": ec2}.get(service, MagicMock())
+            app.lambda_handler({}, None)
+        args = integrate.call_args.args
+        self.assertEqual(args[6], ["us-east-1", "eu-west-1"])     # regions_to_integrate
+        self.assertEqual(args[-1], ["us-east-1", "eu-west-1"])    # eks_audit_logs_regions
+
+
 if __name__ == "__main__":
     unittest.main()

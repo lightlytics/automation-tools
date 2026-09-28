@@ -27,7 +27,8 @@ def lambda_handler(event, context):
     eks_audit_logs = os.environ.get('EKS_AUDIT_LOGS', 'false').lower() == 'true'
     eks_audit_logs_regions = os.environ.get('EKS_AUDIT_LOGS_REGIONS', None)
     if eks_audit_logs_regions:
-        eks_audit_logs_regions = eks_audit_logs_regions.split(",")
+        # Stripped like the CLI does: "us-east-1, eu-west-1" must not yield " eu-west-1".
+        eks_audit_logs_regions = [r.strip() for r in eks_audit_logs_regions.split(",") if r.strip()]
 
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
@@ -40,7 +41,7 @@ def lambda_handler(event, context):
 
     # Prepare regions if provided
     if regions_to_integrate:
-        regions_to_integrate = regions_to_integrate.split(",")
+        regions_to_integrate = [r.strip() for r in regions_to_integrate.split(",") if r.strip()]
 
     print(f"Trying to login into Stream Security environment: {environment}")
     ll_url = f"https://{environment}.{domain}/graphql"
@@ -272,8 +273,11 @@ def integrate_sub_account(
 
         # Deploying EKS audit logs if enabled
         if eks_audit_logs:
+            # account_information["cloud_regions"] is still the creation-time region
+            # only; detect clusters across the active regions, as the CLI does.
             _raise_on_submit_failure(sub_account, deploy_eks_audit_logs_stacks(
-                api_base_url, account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False))
+                api_base_url, {**account_information, "cloud_regions": active_regions}, sub_account_session,
+                sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False))
 
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
