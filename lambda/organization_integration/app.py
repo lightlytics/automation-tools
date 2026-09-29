@@ -27,7 +27,8 @@ def lambda_handler(event, context):
     eks_audit_logs = os.environ.get('EKS_AUDIT_LOGS', 'false').lower() == 'true'
     eks_audit_logs_regions = os.environ.get('EKS_AUDIT_LOGS_REGIONS', None)
     if eks_audit_logs_regions:
-        eks_audit_logs_regions = eks_audit_logs_regions.split(",")
+        # Stripped like the CLI does: "us-east-1, eu-west-1" must not yield " eu-west-1".
+        eks_audit_logs_regions = [r.strip() for r in eks_audit_logs_regions.split(",") if r.strip()]
 
     # Setting up variables
     random_int = random.randint(1000000, 9999999)
@@ -40,7 +41,7 @@ def lambda_handler(event, context):
 
     # Prepare regions if provided
     if regions_to_integrate:
-        regions_to_integrate = regions_to_integrate.split(",")
+        regions_to_integrate = [r.strip() for r in regions_to_integrate.split(",") if r.strip()]
 
     print(f"Trying to login into Stream Security environment: {environment}")
     ll_url = f"https://{environment}.{domain}/graphql"
@@ -114,11 +115,27 @@ def lambda_handler(event, context):
 
     print("Integration finished successfully!")
 
+def _raise_on_submit_failure(sub_account, records):
+    # The deploy_* helpers return a SUBMIT_FAILED record instead of raising when
+    # create_stack fails. Raise here so the handler still counts the account as
+    # failed, as it did when create_stack raised directly.
+    if isinstance(records, dict):
+        records = [records]
+    failed = [r for r in records or [] if r and r.get("final_status") == "SUBMIT_FAILED"]
+    if failed:
+        details = "; ".join(f"{r['stack_type']} in {r['region']}: {r.get('status_reason')}" for r in failed)
+        raise Exception(f"Account: {sub_account[0]} | Failed to submit stack(s): {details}")
+
+
 def integrate_sub_account(
         sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
         org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", environment=None, domain=None,
         eks_audit_logs=False, eks_audit_logs_regions=None):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
+    # The response and EKS stacks take the base URL as APIUrl, without /graphql:
+    # the response template's acknowledge call fails with it, and console-deployed
+    # stacks use the base URL.
+    api_base_url = f"https://{environment}.{domain}"
     try:
         if sub_account[0] == org_account_id:
             sub_account_session = boto3.Session()
@@ -143,9 +160,12 @@ def integrate_sub_account(
 
         print(color(f"Account: {sub_account[0]} | Checking if integration already exists", "blue"))
         ll_integrated = False
-        try:
-            sub_account_information = \
-                [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]][0]
+        # Only an empty lookup means "not in StreamSecurity yet": an IndexError elsewhere
+        # below, or a failed API call, must fail the account rather than re-create it.
+        matching_accounts = [acc for acc in graph_client.get_accounts(raise_on_error=True)
+                             if sub_account[0] == acc["cloud_account_id"]]
+        if matching_accounts:
+            sub_account_information = matching_accounts[0]
             if sub_account_information["status"] == "UNINITIALIZED":
                 ll_integrated = True
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
@@ -164,17 +184,19 @@ def integrate_sub_account(
                 # Response stack logic for READY state
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
                 if (response_info["remediation"] is None or response_info["remediation"]["status"] is None) and response:
-                    deploy_response_stack(
-                        f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account,
-                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
+                    _raise_on_submit_failure(sub_account, deploy_response_stack(
+                        api_base_url, sub_account_information, sub_account_session, sub_account,
+                        response_region, random_int, custom_tags, response_exclude_runbooks, wait=False))
                 # Deploying EKS audit logs if enabled
                 if eks_audit_logs:
-                    deploy_eks_audit_logs_stacks(
-                        f"https://{environment}.{domain}/graphql", sub_account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
+                    _raise_on_submit_failure(sub_account, deploy_eks_audit_logs_stacks(
+                        api_base_url, sub_account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False))
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
-                    potential_regions = regions_to_integrate
+                    # A copy: the same list is shared by every account (and thread),
+                    # and it gets extend()'d below.
+                    potential_regions = list(regions_to_integrate)
                 else:
                     potential_regions = get_active_regions(sub_account_session, regions)
                 if sorted(current_regions) != sorted(potential_regions):
@@ -197,9 +219,9 @@ def integrate_sub_account(
                 if len(regions_to_integrate) > 0:
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
-                    deploy_all_collection_stacks(
+                    _raise_on_submit_failure(sub_account, deploy_all_collection_stacks(
                         regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account,
-                        custom_tags=custom_tags)
+                        custom_tags=custom_tags))
                 else:
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
                 return
@@ -208,8 +230,6 @@ def integrate_sub_account(
                           f"status at StreamSecurity, remove it and try again"
                 print(color(err_msg, "red"))
                 raise Exception(err_msg)
-        except IndexError:
-            pass
 
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
@@ -225,10 +245,14 @@ def integrate_sub_account(
         account_information = [acc for acc in graph_client.get_accounts()
                                if acc["cloud_account_id"] == sub_account[0]][0]
 
-        # Deploying the initial integration stack
-        if not deploy_init_stack(
+        # Deploying the initial integration stack. deploy_init_stack now
+        # returns (ok, record) instead of a bare bool (see boto_common.py) -
+        # a 2-tuple is always truthy, so `if not deploy_init_stack(...)`
+        # would never detect a real failure here without unpacking it.
+        init_ok, _ = deploy_init_stack(
                 account_information, graph_client, sub_account, sub_account_session, random_int, not parallel,
-                custom_tags=custom_tags):
+                custom_tags=custom_tags)
+        if not init_ok:
             err_msg = f"Account: {sub_account[0]} | Something went wrong with init stack deployment"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
@@ -243,22 +267,25 @@ def integrate_sub_account(
 
         # Response stack logic for new integrations
         if response:
-            deploy_response_stack(
-                f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account,
-                response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
+            _raise_on_submit_failure(sub_account, deploy_response_stack(
+                api_base_url, account_information, sub_account_session, sub_account,
+                response_region, random_int, custom_tags, response_exclude_runbooks, wait=False))
 
         # Deploying EKS audit logs if enabled
         if eks_audit_logs:
-            deploy_eks_audit_logs_stacks(
-                f"https://{environment}.{domain}/graphql", account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
+            # account_information["cloud_regions"] is still the creation-time region
+            # only; detect clusters across the active regions, as the CLI does.
+            _raise_on_submit_failure(sub_account, deploy_eks_audit_logs_stacks(
+                api_base_url, {**account_information, "cloud_regions": active_regions}, sub_account_session,
+                sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False))
 
         if not update_regions(graph_client, sub_account, active_regions, not parallel):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
-        deploy_all_collection_stacks(
-            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags)
+        _raise_on_submit_failure(sub_account, deploy_all_collection_stacks(
+            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags))
 
         return
 

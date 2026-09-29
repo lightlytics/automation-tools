@@ -1,8 +1,8 @@
 import argparse
 import boto3
 import os
-import random
 import sys
+import uuid
 from urllib.parse import urlparse
 
 # Add the project root directory to the Python path
@@ -16,8 +16,63 @@ except ModuleNotFoundError:
     from src.python.common.graph_common import GraphCommon
 
 
+def _classify_stack_status(status):
+    """Bucket a swept stack's final_status for the summary: which counter to
+    increment and which print color to use. Whitelists success rather than
+    blacklisting failure - any terminal status not explicitly recognized as a
+    clean success (an unexpected DELETE_COMPLETE from something external
+    deleting the stack mid-sweep, a not-yet-seen CloudFormation status, the
+    "UNKNOWN" fallback for a record that somehow reached here without a
+    final_status) is reported failed, never silently defaulted to a green
+    "succeeded" line."""
+    if status == "TIMED_OUT":
+        return "timed_out", "yellow"
+    if status == "ERROR":
+        return "errored", "red"
+    if status == "DRY_RUN":
+        return "dry_run", "cyan"
+    if status in ("CREATE_COMPLETE", "UPDATE_COMPLETE"):
+        return "succeeded", "green"
+    return "failed", "red"
+
+
+def _warn_unregistered_eks_regions(sub_account, eks_records, registered_regions):
+    """The collection backend ingests EKS audit events from any region (the
+    endpoint authenticates by collection token, not by registered region),
+    but a cluster in a region the account isn't registered for never enters
+    the asset inventory - its events get stored with raw names instead of
+    being linked to inventory resources. A real capability gap the operator
+    can close with --regions, so say it at deploy time instead of leaving it
+    to be discovered in the UI. SUBMIT_FAILED records deployed nothing, so
+    they're excluded (their failure is already reported on its own).
+    DRY_RUN records still warn - previewing the enrichment gap is the point
+    of a dry run - but with the conditional verb: claiming something was
+    "deployed" in the one mode whose purpose is deploying nothing would be
+    exactly the false reporting this PR exists to eliminate. A real run says
+    "submitted": this runs before the sweep, when the stack may still roll back."""
+    registered = set(registered_regions)
+    verbs = {}
+    for r in eks_records:
+        if r.get("final_status") == "SUBMIT_FAILED" or r["region"] in registered:
+            continue
+        verbs[r["region"]] = ("would be deployed" if r.get("final_status") == "DRY_RUN"
+                              else "submitted")
+    for region in sorted(verbs):
+        print(color(
+            f"Account: {sub_account[0]} | EKS audit collector {verbs[region]} in {region}, "
+            f"which is not a registered region for this account - events will be ingested "
+            f"but not linked to inventory. Add it with --regions for full enrichment.",
+            "yellow"))
+
+
 def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, parallel,
-         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole", response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None, api_token=None):
+         ws_id=None, custom_tags=None, regions_to_integrate=None, control_role="OrganizationAccountAccessRole", response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None, eks_audit_logs_auto_detect=False, api_token=None, dry_run=False):
+
+    if dry_run:
+        print(color("DRY RUN: no CloudFormation stacks will actually be created, and region "
+                    "updates are only previewed. A new account still gets created for real in "
+                    "StreamSecurity (no AWS cost) so the preview reflects real backend data "
+                    "(template URLs, tokens, etc.).", "cyan"))
 
     try:
         if not environment_url:
@@ -32,13 +87,16 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
                 raise ValueError("--environment_password is required (or use --api_token instead).")
     except Exception as e:
         print(color(f"Error: {e}", "red"))
-        return
+        return 1
 
     if not ws_id:
         print(color("Warning: --ws_id not set; using the first workspace returned by the API.", "yellow"))
 
     # Setting up variables
-    random_int = random.randint(1000000, 9999999)
+    # A random suffix for this run's stack names, to avoid collisions across
+    # separate runs against the same account/region. A short hex string has
+    # far more entropy than a 7-digit int (~4 billion vs ~9 million).
+    random_int = uuid.uuid4().hex[:8]
     if accounts:
         accounts = accounts.replace(" ", "").split(",")
 
@@ -70,7 +128,7 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
         print(color("Logged in successfully!", "green"))
     except Exception as e:
         print(color(f"Error: {e}", "red"))
-        return
+        return 1
     
     try:
         print(color("Creating Boto3 Session", "blue"))
@@ -99,7 +157,7 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
         print(color(f"Found {len(sub_accounts)} accounts", "blue"))
     except Exception as e: 
         print(color(f"Error: {e}", "red"))
-        return
+        return 1
 
     if accounts:
         sub_accounts = [sa for sa in sub_accounts if sa[0] in accounts]
@@ -109,9 +167,20 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
     confirmation = input("Do you want to continue? Type 'yes' to proceed: ")
     if confirmation.lower() != 'yes':
         print("Operation canceled.")
-        return
+        return 0
 
+    # The account step gets the normalized base URL (https://<host>), not the raw
+    # --environment_url: the response and EKS stacks take it as their APIUrl, and
+    # the EKS collector prefix is parsed out of it, which raised IndexError for a
+    # bare host like "acme.streamsec.io". No /graphql suffix: the response
+    # template's acknowledge call fails with one, and console-deployed stacks use
+    # the base URL.
+    api_base_url = ll_url[:-len("/graphql")]
     failures = []
+    all_deployed_stacks = []
+    # Account IDs this run created in StreamSecurity (list.append is thread-safe),
+    # listed at the end of a dry run since that is the one real change it makes.
+    created_in_stream = []
     if parallel:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
             # `parallel` is passed positionally on purpose: integrate_sub_account uses
@@ -120,40 +189,118 @@ def main(environment_url, ll_username, ll_password, aws_profile_name, accounts, 
             future_to_account = {
                 executor.submit(
                     integrate_sub_account,
-                    environment_url, sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
-                    control_role, org_account_id, parallel, response, response_region, response_exclude_runbooks, eks_audit_logs, eks_audit_logs_regions
+                    api_base_url, sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate,
+                    control_role, org_account_id, parallel, response, response_region, response_exclude_runbooks, eks_audit_logs, eks_audit_logs_regions,
+                    eks_audit_logs_auto_detect, dry_run, created_in_stream=created_in_stream
                 ): sub_account for sub_account in sub_accounts
             }
             for future in concurrent.futures.as_completed(future_to_account):
                 sub_account = future_to_account[future]
                 account_id = sub_account[0]
                 try:
-                    future.result()
+                    account_deployed_stacks = future.result()
+                    if account_deployed_stacks:
+                        all_deployed_stacks.extend(account_deployed_stacks)
                 except Exception as e:
                     failures.append((account_id, str(e)))
+                    # Even though this account's run raised, it may have already
+                    # created some real stacks before the failure (e.g. the init
+                    # stack succeeded, then a later step raised) - preserve those
+                    # so they still get swept/reported instead of silently lost.
+                    all_deployed_stacks.extend(getattr(e, "deployed_stacks", None) or [])
     else:
         for sub_account in sub_accounts:
             account_id = sub_account[0]
             try:
-                integrate_sub_account(
-                    environment_url, sub_account, sts_client, graph_client, regions, random_int,
+                account_deployed_stacks = integrate_sub_account(
+                    api_base_url, sub_account, sts_client, graph_client, regions, random_int,
                     custom_tags, regions_to_integrate, control_role, org_account_id, response=response, response_region=response_region, response_exclude_runbooks=response_exclude_runbooks,
-                    eks_audit_logs=eks_audit_logs, eks_audit_logs_regions=eks_audit_logs_regions)
+                    eks_audit_logs=eks_audit_logs, eks_audit_logs_regions=eks_audit_logs_regions,
+                    eks_audit_logs_auto_detect=eks_audit_logs_auto_detect, dry_run=dry_run,
+                    created_in_stream=created_in_stream)
+                if account_deployed_stacks:
+                    all_deployed_stacks.extend(account_deployed_stacks)
             except Exception as e:
                 failures.append((account_id, str(e)))
+                all_deployed_stacks.extend(getattr(e, "deployed_stacks", None) or [])
 
     if failures:
         print(color(f"Integration finished with {len(failures)} failure(s):", "red"))
         for account_id, msg in failures:
             print(color(f"  {account_id}: {msg}", "red"))
-    else:
+
+    # Every create_stack call above was fire-and-forget (submitted, not waited on).
+    # Sweep every stack this run created to find out what actually happened, then
+    # print one consolidated, honest summary instead of assuming success.
+    stacks_ok = True
+    if all_deployed_stacks:
+        print(color(f"Checking final status of {len(all_deployed_stacks)} stack(s)...", "blue"))
+        swept_stacks = sweep_stack_statuses(
+            all_deployed_stacks, sts_client, org_account_id, control_role=control_role)
+
+        counts = {"succeeded": 0, "failed": 0, "timed_out": 0, "errored": 0, "dry_run": 0}
+        for r in swept_stacks:
+            # Defensive .get() with a fallback, not direct indexing: every
+            # record reaching here is SUPPOSED to carry a final_status (either
+            # set directly for a submit-time failure, or guaranteed by
+            # sweep_stack_statuses/_sweep_account otherwise), but that
+            # invariant is enforced only by convention across several
+            # functions - a future change that violates it should degrade to
+            # an honest "unknown, check manually" line instead of crashing
+            # this loop and losing every other account's already-printed
+            # results.
+            status = r.get("final_status") or "UNKNOWN"
+            reason = r.get("status_reason")
+            line = f"{r['account']} ({r['name']}) | {r['region']} | {r['stack_type']} | {status}"
+            if reason:
+                line += f" | reason: {reason}"
+            bucket, print_color = _classify_stack_status(status)
+            counts[bucket] += 1
+            print(color(line, print_color))
+
+        succeeded_count = counts["succeeded"]
+        failed_count = counts["failed"]
+        timed_out_count = counts["timed_out"]
+        errored_count = counts["errored"]
+        dry_run_count = counts["dry_run"]
+
+        summary = (
+            f"Stack sweep summary ({len(swept_stacks)} stack(s) total): "
+            f"{succeeded_count} succeeded, {failed_count} failed, "
+            f"{timed_out_count} timed out, {errored_count} errored, "
+            f"{dry_run_count} dry-run (not actually created)")
+        # TIMED_OUT counts against the exit code: the run could not confirm it.
+        stacks_ok = not (failed_count or errored_count or timed_out_count)
+        if failed_count or errored_count:
+            print(color(summary, "red"))
+        elif timed_out_count:
+            print(color(summary, "yellow"))
+        elif dry_run_count:
+            print(color(summary, "cyan"))
+        else:
+            print(color(summary, "green"))
+    elif not failures:
+        # Nothing new was deployed this run (e.g. every targeted account was
+        # already fully READY in every region) - there is nothing to sweep.
         print(color("Integration finished successfully!", "green"))
+
+    if dry_run and created_in_stream:
+        print(color(
+            f"DRY RUN: {len(created_in_stream)} account(s) were created for real in StreamSecurity and "
+            f"remain UNINITIALIZED until a real run deploys their init stack: "
+            f"{', '.join(sorted(created_in_stream))}", "yellow"))
+
+    # Non-zero whenever anything failed or could not be confirmed, so CI and
+    # wrapper scripts do not read a failed run as a success.
+    return 0 if not failures and stacks_ok else 1
 
 
 def integrate_sub_account(
         environment_url, sub_account, sts_client, graph_client, regions, random_int, custom_tags, regions_to_integrate, control_role,
-        org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None):
+        org_account_id, parallel=False, response=False, response_region="us-east-1", response_exclude_runbooks="", eks_audit_logs=False, eks_audit_logs_regions=None,
+        eks_audit_logs_auto_detect=False, dry_run=False, created_in_stream=None):
     print(color(f"Account: {sub_account[0]} | Starting integration", color="blue"))
+    deployed_stacks = []
     try:
         if sub_account[0] == org_account_id:
             sub_account_session = boto3.Session()
@@ -173,39 +320,93 @@ def integrate_sub_account(
 
         print(color(f"Account: {sub_account[0]} | Checking if integration already exists", "blue"))
         ll_integrated = False
-        try:
-            sub_account_information = \
-                [acc for acc in graph_client.get_accounts() if sub_account[0] == acc["cloud_account_id"]][0]
+        # Only an empty lookup means "not in StreamSecurity yet". This used to be
+        # an `except IndexError: pass` around the whole block below, which sent an
+        # existing account to create_account on any unrelated IndexError.
+        # raise_on_error: a failed API call must fail the account, not read as "not found".
+        matching_accounts = [acc for acc in graph_client.get_accounts(raise_on_error=True)
+                             if sub_account[0] == acc["cloud_account_id"]]
+        if matching_accounts:
+            sub_account_information = matching_accounts[0]
             if sub_account_information["status"] == "UNINITIALIZED":
                 ll_integrated = True
                 print(color(f"Account: {sub_account[0]} | Integrated but uninitialized, continuing", "blue"))
             elif sub_account_information["status"] == "READY":
                 print(color(f"Account: {sub_account[0]} | Integration exists and in READY state", "green"))
                 
-                # Deploying response stack if enabled
+                # Deploying response stack if enabled. wait=False here (this
+                # branch used to pass wait=True) - matches the fire-and-forget
+                # pattern every other deploy call in this file already uses;
+                # the end-of-run sweep determines the real outcome instead of
+                # blocking here.
                 response_info = graph_client.get_account_response_config(sub_account_information["cloud_account_id"])
                 remediation = response_info.get("remediation")
                 if (remediation is None or remediation.get("status") is None) and response:
-                    deploy_response_stack(
-                        environment_url ,sub_account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, response_exclude_runbooks, wait=True)
-                
-                # Deploying EKS audit logs if enabled
-                if eks_audit_logs:
-                    deploy_eks_audit_logs_stacks(
-                        environment_url, sub_account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
-                
+                    response_record = deploy_response_stack(
+                        environment_url ,sub_account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, response_exclude_runbooks, wait=False,
+                        dry_run=dry_run)
+                    if response_record:
+                        deployed_stacks.append(response_record)
+
                 print(color(f"Account: {sub_account[0]} | Checking if regions are updated", "blue"))
                 current_regions = sub_account_information["cloud_regions"]
                 if regions_to_integrate:
-                    potential_regions = regions_to_integrate
+                    # list(...): a copy, not the caller's shared --regions
+                    # list itself - it gets extend()'d in place further down
+                    # in this same branch. regions_to_integrate is the SAME
+                    # object passed to every account in this run (and, under
+                    # --parallel, to every account's thread concurrently) -
+                    # mutating it directly would leak one account's
+                    # current_regions into every other account's region set
+                    # processed afterward, and race across threads in
+                    # parallel mode.
+                    potential_regions = list(regions_to_integrate)
                 else:
                     potential_regions = get_active_regions(sub_account_session, regions)
+
+                # Deploying EKS audit logs if enabled. eks_audit_logs_auto_detect
+                # forces auto-detection (regions=None) regardless of
+                # eks_audit_logs_regions - it's the explicit "just detect and
+                # deploy where EKS clusters are found" mode, so it scans
+                # EVERY region enabled for this org (the same `regions` this
+                # function already receives), not just the EC2-instance-based
+                # potential_regions or the account's currently-registered
+                # cloud_regions. Either of those alone would miss a
+                # Fargate-only EKS cluster (no EC2 instances at all, so
+                # get_active_regions never reports that region as "active")
+                # in a region the account isn't otherwise registered for.
+                # get_active_eks_regions does its own real, authoritative
+                # list_clusters() check per region and already isolates a
+                # single region's failure from the rest - one extra API call
+                # per region not otherwise active is a small price for not
+                # silently missing real clusters. Plain --eks_audit_logs
+                # keeps its existing behavior (scanning cloud_regions only)
+                # unchanged.
+                if eks_audit_logs or eks_audit_logs_auto_detect:
+                    regions_arg = None if eks_audit_logs_auto_detect else eks_audit_logs_regions
+                    eks_account_information = (
+                        {**sub_account_information, "cloud_regions": regions}
+                        if eks_audit_logs_auto_detect else sub_account_information)
+                    eks_records = deploy_eks_audit_logs_stacks(
+                        environment_url, eks_account_information, sub_account_session, sub_account, regions_arg, random_int, custom_tags, wait=False,
+                        dry_run=dry_run)
+                    if eks_records:
+                        deployed_stacks.extend(eks_records)
+                        # Compare against the account's FINAL registered set:
+                        # the update just below registers the union of
+                        # potential and current regions (or leaves current as
+                        # is when they already match, in which case the union
+                        # is the same set).
+                        _warn_unregistered_eks_regions(
+                            sub_account, eks_records,
+                            set(potential_regions) | set(current_regions))
+
                 if sorted(current_regions) != sorted(potential_regions):
                     potential_regions.extend(current_regions)
                     potential_regions = list(set(potential_regions))
                     print(color(
                         f"Account: {sub_account[0]} | Regions are different, updating to {potential_regions}", "blue"))
-                    if not update_regions(graph_client, sub_account, potential_regions, not parallel):
+                    if not update_regions(graph_client, sub_account, potential_regions, not parallel, dry_run=dry_run):
                         err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
                         print(color(err_msg, "red"))
                         raise Exception(err_msg)
@@ -220,19 +421,19 @@ def integrate_sub_account(
                 if len(regions_to_integrate) > 0:
                     print(color(f"Account: {sub_account[0]} | Realtime is not enabled on all regions, "
                                 f"adding support for {regions_to_integrate}", "blue"))
-                    deploy_all_collection_stacks(
+                    collection_records = deploy_all_collection_stacks(
                         regions_to_integrate, sub_account_session, random_int, sub_account_information, sub_account,
-                        custom_tags=custom_tags)
+                        custom_tags=custom_tags, dry_run=dry_run)
+                    if collection_records:
+                        deployed_stacks.extend(collection_records)
                 else:
                     print(color(f"Account: {sub_account[0]} | All regions are integrated to realtime", "green"))
-                return
+                return deployed_stacks
             else:
                 err_msg = f"Account: {sub_account[0]} | Account is in {sub_account_information['status']} " \
                           f"status at StreamSecurity, remove it and try again"
                 print(color(err_msg, "red"))
                 raise Exception(err_msg)
-        except IndexError:
-            pass
 
         # If account is not already integrated to StreamSecurity
         if not ll_integrated:
@@ -243,16 +444,24 @@ def integrate_sub_account(
                 print(color(err_msg, "red"))
                 raise Exception(err_msg)
             print(color(f"Account: {sub_account[0]} | Account created successfully", "green"))
+            if created_in_stream is not None:
+                created_in_stream.append(sub_account[0])
 
         print(color(f"Account: {sub_account[0]} | Fetching relevant account information", "blue"))
         account_information = [acc for acc in graph_client.get_accounts()
                                if acc["cloud_account_id"] == sub_account[0]][0]
 
         # Deploying the initial integration stack
-        if not deploy_init_stack(
+        init_ok, init_record = deploy_init_stack(
                 account_information, graph_client, sub_account, sub_account_session, random_int, not parallel,
-                custom_tags=custom_tags):
+                custom_tags=custom_tags, dry_run=dry_run)
+        if init_record:
+            deployed_stacks.append(init_record)
+        if not init_ok:
+            reason = init_record.get("status_reason") if init_record else None
             err_msg = f"Account: {sub_account[0]} | Something went wrong with init stack deployment"
+            if reason:
+                err_msg += f": {reason}"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
@@ -265,32 +474,82 @@ def integrate_sub_account(
         print(color(f"Account: {sub_account[0]} | Active regions are: {active_regions}", "blue"))
 
         if response:
-            deploy_response_stack(
-                environment_url, account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, response_exclude_runbooks, wait=False)
+            response_record = deploy_response_stack(
+                environment_url, account_information, sub_account_session, sub_account, response_region, random_int, custom_tags, response_exclude_runbooks, wait=False,
+                dry_run=dry_run)
+            if response_record:
+                deployed_stacks.append(response_record)
 
-        if eks_audit_logs:
-            deploy_eks_audit_logs_stacks(
-                environment_url, account_information, sub_account_session, sub_account, eks_audit_logs_regions, random_int, custom_tags, wait=False)
+        if eks_audit_logs or eks_audit_logs_auto_detect:
+            # account_information["cloud_regions"] is still the backend's
+            # stale value from account creation (at most the CLI's own
+            # session region) - deploy_eks_audit_logs_stacks' own auto-detect
+            # fallback would scan only that if given account_information
+            # as-is, silently missing EKS clusters in any other active
+            # region.
+            # eks_audit_logs_auto_detect forces auto-detection (regions=None)
+            # regardless of eks_audit_logs_regions - it's the explicit "just
+            # detect and deploy where EKS clusters are found" mode, so it
+            # scans EVERY region enabled for this org (`regions`), not just
+            # active_regions (EC2-instance-based) - active_regions alone
+            # would still miss a Fargate-only EKS cluster in a region with
+            # no EC2 instances at all. get_active_eks_regions does its own
+            # real, authoritative list_clusters() check per region and
+            # already isolates a single region's failure from the rest.
+            # Plain --eks_audit_logs keeps scanning active_regions (the fix
+            # already shipped for it - real EC2-instance detection instead
+            # of the stale account_information["cloud_regions"] above).
+            regions_arg = None if eks_audit_logs_auto_detect else eks_audit_logs_regions
+            eks_scan_regions = regions if eks_audit_logs_auto_detect else active_regions
+            eks_records = deploy_eks_audit_logs_stacks(
+                environment_url, {**account_information, "cloud_regions": eks_scan_regions},
+                sub_account_session, sub_account, regions_arg, random_int, custom_tags, wait=False,
+                dry_run=dry_run)
+            if eks_records:
+                deployed_stacks.extend(eks_records)
+                # active_regions is what update_regions registers just below,
+                # i.e. this account's final registered set.
+                _warn_unregistered_eks_regions(sub_account, eks_records, active_regions)
 
         # Updating the regions in StreamSecurity and waiting
-        if not update_regions(graph_client, sub_account, active_regions, not parallel):
+        if not update_regions(graph_client, sub_account, active_regions, not parallel, dry_run=dry_run):
             err_msg = f"Account: {sub_account[0]} | Something went wrong with regions update"
             print(color(err_msg, "red"))
             raise Exception(err_msg)
 
         # Deploying collections stacks for all regions
-        deploy_all_collection_stacks(
-            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags)
+        collection_records = deploy_all_collection_stacks(
+            active_regions, sub_account_session, random_int, account_information, sub_account, custom_tags=custom_tags,
+            dry_run=dry_run)
+        if collection_records:
+            deployed_stacks.extend(collection_records)
 
-        return
+        return deployed_stacks
 
     except Exception as e:
         err_msg = f"Account: {sub_account[0]} | Something went wrong: {e}"
         print(color(err_msg, "red"))
-        raise Exception(err_msg)
+        wrapped = Exception(err_msg)
+        # Preserve whatever stacks were already created before this failure (e.g.
+        # the init stack succeeded but a later step raised) so main() can still
+        # sweep/report them instead of silently losing track of real AWS resources.
+        wrapped.deployed_stacks = deployed_stacks
+        raise wrapped
 
 
-def update_regions(graph_client, sub_account, active_regions, wait=True):
+def update_regions(graph_client, sub_account, active_regions, wait=True, dry_run=False):
+    if dry_run:
+        # In a real run this account's status would already be READY by now
+        # (the just-created init stack reported back to StreamSecurity) -
+        # but dry_run never actually created that stack, so the real polling
+        # loop below would spin until its 5-minute timeout waiting for a
+        # transition that will never happen. edit_regions() itself is
+        # skipped too, since there's no real init stack for the backend to
+        # have associated the account with yet.
+        print(color(f"Account: {sub_account[0]} | DRY RUN: would update regions to "
+                    f"{active_regions}", "cyan"))
+        return True
+
     print(color(f"Account: {sub_account[0]} | Wait until account is initialized", "blue"))
     count = 0
     while True:
@@ -360,9 +619,20 @@ if __name__ == "__main__":
         "--eks_audit_logs", help="Enable EKS audit logs", action="store_true", required=False)
     parser.add_argument(
         "--eks_audit_logs_regions", help="Regions for EKS audit logs, separated by comma", required=False)
+    parser.add_argument(
+        "--eks_audit_logs_auto_detect", help="Auto-detect EKS clusters and deploy audit logs only where found",
+        action="store_true", required=False)
+    parser.add_argument(
+        "--dry_run",
+        help="Preview only - skip every CloudFormation stack creation (zero AWS cost). "
+             "Still creates the account for real in StreamSecurity so the preview reflects "
+             "real backend data; region updates are also preview-only.",
+        action="store_true", required=False)
     args = parser.parse_args()
-    main(args.environment_url, args.environment_user_name, args.environment_password,
+    sys.exit(main(args.environment_url, args.environment_user_name, args.environment_password,
          args.aws_profile_name, args.accounts, args.parallel,
          ws_id=args.ws_id, custom_tags=args.custom_tags, regions_to_integrate=args.regions,
          control_role=args.control_role, response=args.response, response_region=args.response_region, response_exclude_runbooks=args.response_exclude_runbooks,
-         eks_audit_logs=args.eks_audit_logs, eks_audit_logs_regions=args.eks_audit_logs_regions, api_token=args.api_token)
+         eks_audit_logs=args.eks_audit_logs, eks_audit_logs_regions=args.eks_audit_logs_regions,
+         eks_audit_logs_auto_detect=args.eks_audit_logs_auto_detect, api_token=args.api_token,
+         dry_run=args.dry_run))
