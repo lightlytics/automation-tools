@@ -366,7 +366,9 @@ class TestOrgScaleSimulation(unittest.TestCase):
         # This org includes fatal, SUBMIT_FAILED and TIMED_OUT accounts.
         self.assertEqual(rc, 1)
 
-        output = stdout_buf.getvalue()
+        # Strip ANSI colors: termcolor 1.x (the pinned version) always emits them,
+        # newer versions skip them when stdout isn't a terminal.
+        output = re.sub(r"\x1b\[[0-9;]*m", "", stdout_buf.getvalue())
         # main()'s exit code is run-wide; the failures block it prints
         # (`"  {account_id}: {msg}"`) is what says which accounts raised.
         failed_accounts = set(re.findall(r"^  (\d{12}):", output, re.MULTILINE))
