@@ -6,6 +6,8 @@ import zipfile
 import shutil
 import os
 import tempfile
+import textwrap
+from botocore.exceptions import BotoCoreError, ClientError
 
 parser = argparse.ArgumentParser(description="Streamsec Organization Lambda Setup Script")
 parser.add_argument("--environment", required=False, help="The environment name in which the Lambda function will operate.")
@@ -18,8 +20,9 @@ parser.add_argument("--accounts", required=False, help="manually specify account
 parser.add_argument("--ws-id", required=False, help="The workspace ID.")
 parser.add_argument("--control-role", default="OrganizationAccountAccessRole", help="The control role name for assuming the role in the target account.", required=False)
 parser.add_argument("--response", action="store_true", help="Enable creation of the response stack.")
-parser.add_argument("--response-region", default="us-east-1", help="Region for response stack.")
+parser.add_argument("--response-region", default="us-east-1", help="Region for the response stack only. Does not affect collection regions, see --regions.")
 parser.add_argument("--response-exclude-runbooks", help="Comma separated list of runbooks to exclude from response stack.")
+parser.add_argument("--regions", required=False, help="Comma separated list of regions to onboard each account to (collection stacks). us-east-1 is always included. If omitted, only regions with EC2 instances are detected, plus us-east-1, so new accounts without instances get us-east-1 only.")
 parser.add_argument("--eks-audit-logs", action="store_true", help="Enable creation of the EKS audit logs.")
 parser.add_argument("--eks-audit-logs-regions", required=False, help="Comma separated list of regions to enable EKS audit logs.")
 parser.add_argument("--invoke-after-deploy", action="store_true", help="Invoke the Lambda asynchronously after deploy to onboard existing accounts immediately.")
@@ -41,6 +44,73 @@ def _aws_clients():
     )
 
 
+def _build_env_vars(args):
+    env_vars = {
+        "ENVIRONMENT": args.environment,
+        "WS_ID": args.ws_id,
+        "PARALLEL": "8",
+        "CONTROL_ROLE": args.control_role,
+        "RESPONSE": str(args.response).lower(),
+        "RESPONSE_REGION": args.response_region,
+        "EKS_AUDIT_LOGS": str(args.eks_audit_logs).lower(),
+    }
+    if args.api_token:
+        env_vars["API_TOKEN"] = args.api_token
+    else:
+        env_vars["ENVIRONMENT_USER_NAME"] = args.user_name
+        env_vars["ENVIRONMENT_PASSWORD"] = args.password
+    if args.accounts is not None:
+        env_vars["ACCOUNTS"] = args.accounts
+        
+    if args.response_exclude_runbooks is not None:
+        env_vars["RESPONSE_EXCLUDE_RUNBOOKS"] = args.response_exclude_runbooks
+
+    if args.eks_audit_logs_regions is not None:
+        env_vars["EKS_AUDIT_LOGS_REGIONS"] = args.eks_audit_logs_regions
+
+    if args.regions is not None:
+        env_vars["REGIONS"] = ",".join(_parse_regions(args.regions))
+
+    return env_vars
+
+
+def _parse_regions(value):
+    # Same parsing as app.py, repeats dropped (keeping order).
+    return list(dict.fromkeys(r.strip() for r in value.split(",") if r.strip()))
+
+
+BOX_WIDTH = 80
+
+
+def _boxed(text, width=BOX_WIDTH):
+    """Wrap text in an asterisk box so it stands out from the step list."""
+    inner = width - 4
+    lines = textwrap.wrap(text, inner, break_on_hyphens=False)
+    rows = [f"* {line.ljust(inner)} *" for line in lines]
+    return "\n".join(["*" * width] + rows + ["*" * width])
+
+
+def _regions_summary(parsed):
+    if parsed is not None:
+        # app.py always keeps us-east-1, so show what will actually be deployed.
+        if "us-east-1" not in parsed:
+            return f"{', '.join(parsed)} (from --regions), plus us-east-1 (always included)"
+        return f"{', '.join(parsed)} (from --regions)"
+    return ("auto-detected per account: regions with EC2 instances, plus us-east-1 "
+            "(new accounts without instances get us-east-1 only, set --regions to choose)")
+
+
+def _check_regions(requested, ec2_client):
+    """Split --regions into names AWS doesn't know (typos) and real regions
+    that aren't enabled in this account. Opt-in regions can be enabled per
+    account, so the second group is a warning, not an error."""
+    known = {r["RegionName"]: r.get("OptInStatus")
+             for r in ec2_client.describe_regions(AllRegions=True)["Regions"]}
+    unknown = [r for r in requested if r not in known]
+    not_enabled = [r for r in requested if known.get(r) == "not-opted-in"]
+    return unknown, not_enabled
+
+
 def main():
     missing_args = []
     if not args.environment:
@@ -58,6 +128,17 @@ def main():
         print("Either --api-token, or both --user-name and --password, must be provided (unless --cleanup is specified).")
         return
 
+    regions = _parse_regions(args.regions) if args.regions is not None else None
+    if regions is not None and not regions:
+        print("Error: --regions was given but contains no regions.")
+        return
+
+    # Checked before anything is created, so a bad value can't leave a
+    # half-built setup behind.
+    if args.schedule_scan_days and args.schedule_scan_days <= 0:
+        print("Error: --schedule-scan-days must be a positive integer.")
+        return
+
     iam_client, sts_client, lambda_client, events_client = _aws_clients()
     
     # verify the region is us-east-1
@@ -65,16 +146,43 @@ def main():
     if region != "us-east-1":
         print("The region must be us-east-1.")
         return
+
+    if regions is not None:
+        # REGIONS applies to every account in the organization, so one bad
+        # name would fail every account on every run. Stop here instead.
+        try:
+            unknown, not_enabled = _check_regions(regions, boto3.client('ec2', region_name='us-east-1'))
+        except (ClientError, BotoCoreError) as e:
+            # The Lambda still skips regions an account doesn't have, so this
+            # check is a convenience, not a requirement.
+            print(f"Warning: could not check --regions ({e}). This needs ec2:DescribeRegions; "
+                  f"continuing without the typo check.")
+            unknown, not_enabled = [], []
+        if unknown:
+            print(f"Error: unknown region(s) in --regions: {', '.join(unknown)}. "
+                  f"Check for typos; region names look like us-west-2.")
+            return
+        if not_enabled:
+            print(f"Warning: region(s) not enabled in the management account: {', '.join(not_enabled)}. "
+                  f"Each account is onboarded only to the listed regions it has enabled.")
     
-    print("Welcome to the Streamsec Organization Lambda Setup Script!")
+    print("=" * BOX_WIDTH)
+    print(" Streamsec Organization Lambda Setup")
+    print("=" * BOX_WIDTH)
     print("This script will perform the following actions:")
-    print("1. Create an IAM policy with permissions to list AWS accounts and describe EC2 regions.")
-    print("2. Create an IAM role for the Lambda function with the necessary assume role policy.")
-    print("3. Attach the created policy and the AWS Lambda basic execution role policy to the IAM role.")
-    print("4. Create a Lambda function with the specified configurations.")
-    print("5. Create an EventBridge rule to trigger the Lambda function when a new AWS account is created.")
-    print("6. Add necessary permissions for EventBridge to invoke the Lambda function.")
-    print("7. Set the EventBridge rule target to the Lambda function.")
+    print("  1. Create an IAM policy with permissions to list AWS accounts and describe EC2 regions.")
+    print("  2. Create an IAM role for the Lambda function with the necessary assume role policy.")
+    print("  3. Attach the created policy and the AWS Lambda basic execution role policy to the IAM role.")
+    print("  4. Create a Lambda function with the specified configurations.")
+    print(f"       Collection regions: {_regions_summary(regions)}")
+    print("  5. Create an EventBridge rule to trigger the Lambda function when a new AWS account is created.")
+    print("  6. Add necessary permissions for EventBridge to invoke the Lambda function.")
+    print("  7. Set the EventBridge rule target to the Lambda function.")
+    print()
+    print(_boxed("NOTE: The Lambda onboards member accounts only. Onboard this management account once "
+                 "from the Stream Security console, or with "
+                 "src/python/utilities/organization_integration.py."))
+    print()
 
     proceed = input("Do you want to proceed with these actions? (yes/no): ")
     if proceed.lower() != "yes":
@@ -160,28 +268,7 @@ def main():
 
     # Create Lambda function
     function_name = "streamsec-organization-lambda"
-    env_vars = {
-        "ENVIRONMENT": args.environment,
-        "WS_ID": args.ws_id,
-        "PARALLEL": "8",
-        "CONTROL_ROLE": args.control_role,
-        "RESPONSE": str(args.response).lower(),
-        "RESPONSE_REGION": args.response_region,
-        "EKS_AUDIT_LOGS": str(args.eks_audit_logs).lower(),
-    }
-    if args.api_token:
-        env_vars["API_TOKEN"] = args.api_token
-    else:
-        env_vars["ENVIRONMENT_USER_NAME"] = args.user_name
-        env_vars["ENVIRONMENT_PASSWORD"] = args.password
-    if args.accounts is not None:
-        env_vars["ACCOUNTS"] = args.accounts
-        
-    if args.response_exclude_runbooks is not None:
-        env_vars["RESPONSE_EXCLUDE_RUNBOOKS"] = args.response_exclude_runbooks
-
-    if args.eks_audit_logs_regions is not None:
-        env_vars["EKS_AUDIT_LOGS_REGIONS"] = args.eks_audit_logs_regions
+    env_vars = _build_env_vars(args)
 
     with open(zip_filename, 'rb') as f:
         zipped_code = f.read()
@@ -247,9 +334,6 @@ def main():
     # the PutAccountName CloudTrail event only appears in the member account's
     # trail, not the management account where this EventBridge rule lives.
     if args.schedule_scan_days:
-        if args.schedule_scan_days <= 0:
-            print("Error: --schedule-scan-days must be a positive integer.")
-            return
         scheduled_rule_name = "streamsec-organization-scheduled-scan"
         schedule_expr = f"rate({args.schedule_scan_days} day)" if args.schedule_scan_days == 1 else f"rate({args.schedule_scan_days} days)"
         events_client.put_rule(
