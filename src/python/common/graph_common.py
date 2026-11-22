@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 import time
 import urllib.parse
 
@@ -7,6 +8,7 @@ import requests
 
 # Report reads (rules, CSV exports, cost) can take minutes on a large workspace.
 REQUEST_TIMEOUT_S = 300
+PROCEDURE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+")
 RETRY_STATUSES = (502, 503, 504)
 
 ACCOUNT_KEYS = ('_id', 'account_type', 'cloud_account_id', 'cloud_regions', 'display_name', 'external_id', 'status',
@@ -479,9 +481,12 @@ class GraphCommon(object):
 
     def export_csv_rule(self, rule_id):
         """ Get CSV formatted data regarding rule violations.
-            :returns (csv) - Rule violations.
+            :returns (csv) - Rule violations; None when the export fails.
         """
-        data = self.trpc_mutation("rules.ruleCsv", {"rule_id": rule_id}, resend=True)
+        try:
+            data = self.trpc_mutation("rules.ruleCsv", {"rule_id": rule_id}, resend=True)
+        except TRPCError:
+            return None
         out = _pick(data, RULE_CSV_KEYS)
         out['violations'] = [_pick(v, RULE_CSV_VIOLATION_KEYS, 'RuleCsvViolation') for v in data.get('violations') or []]
         out['__typename'] = 'RuleCsvResponse'
@@ -758,6 +763,9 @@ class GraphCommon(object):
         return self._trpc_call("POST", procedure, input_data, resend=resend)
 
     def _trpc_call(self, method, procedure, input_data, resend, token=None, with_customer=True):
+        # A router.procedure name only, so a name can't reach another path on the host.
+        if not PROCEDURE_NAME.fullmatch(procedure):
+            raise ValueError(f"Not a procedure name: {procedure!r}")
         url = f"{self.base_url}/trpc/{procedure}"
         body = None
         if method == "GET":

@@ -52,9 +52,15 @@ class TestTransport(unittest.TestCase):
         self.assertEqual(sent_input(call), {"a": 1})
         self.assertEqual(call.kwargs["headers"], {"Authorization": "Bearer token", "Customer": "ws1"})
 
+    def test_a_name_that_is_not_a_procedure_is_refused_before_any_request(self):
+        with patch.object(graph_common.requests, "request") as req:
+            for name in ("../../admin", "rules.list?x=1", "%2e%2e/admin", "rules", "rules.list/x"):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    client().trpc_query(name)
+        req.assert_not_called()
+
     def test_trailing_graphql_in_the_environment_url_is_ignored(self):
-        with patch.object(GraphCommon, "get_customer_id", return_value="ws1"), \
-                patch.object(graph_common.time, "sleep"):
+        with patch.object(GraphCommon, "get_customer_id", return_value="ws1"):
             gc = GraphCommon("https://example.streamsec.io/graphql", token="t")
         self.assertEqual(gc.base_url, "https://example.streamsec.io")
         self.assertEqual(gc.token, "Bearer t")
@@ -171,6 +177,11 @@ class TestReturnShapes(unittest.TestCase):
         result, req = self.call("get_flow_logs", {"results": [{"dst_geo_iso": "US", "src_port": 1}]}, limit=5)
         self.assertEqual(list(result[0])[-2:], ["dst_geo_iso", "__typename"])
         self.assertEqual(req.call_args.args[0], "POST")
+
+    def test_a_failed_csv_export_is_none_so_the_reports_skip_the_rule(self):
+        with patch.object(graph_common.requests, "request",
+                          return_value=response(500, error={"message": "An internal error occurred"})):
+            self.assertIsNone(client().export_csv_rule("r1"))
 
     def test_kubernetes_cost_keeps_the_keys_the_export_deletes(self):
         result, _ = self.call("get_kubernetes_cost", {"total_count": 1, "results": [{"total_cost": 5}]},

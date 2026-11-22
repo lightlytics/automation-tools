@@ -278,6 +278,19 @@ def get_rule_violations(rule_id: str) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+SECRET_KEYS = {"account_auth_token", "account_token", "lightlytics_collection_token", "flow_logs_token",
+               "collection_token", "access_token", "refresh_token"}
+
+
+def _without_secrets(value):
+    """ The value with every token key blanked: a procedure answers with whole objects. """
+    if isinstance(value, dict):
+        return {k: ("<redacted>" if k in SECRET_KEYS else _without_secrets(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_without_secrets(v) for v in value]
+    return value
+
+
 @mcp.tool()
 def run_trpc_procedure(procedure: str, input_data: Optional[Dict[str, Any]] = None,
                        mutation: bool = False) -> Dict[str, Any]:
@@ -285,7 +298,8 @@ def run_trpc_procedure(procedure: str, input_data: Optional[Dict[str, Any]] = No
     Call a Stream Security API procedure by name.
 
     Calls a procedure such as "rules.list" or "inventory.search" with the given input.
-    Set mutation to True for a procedure that changes data.
+    Set mutation to True for a procedure that changes data; a mutation changes the
+    environment's configuration. Tokens in the result are left out.
     """
     graph_client = connect().get("client", None)
     if not graph_client:
@@ -298,7 +312,7 @@ def run_trpc_procedure(procedure: str, input_data: Optional[Dict[str, Any]] = No
             result = graph_client.trpc_query(procedure, input_data)
         return {
             "status": "success",
-            "result": result
+            "result": _without_secrets(result)
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
