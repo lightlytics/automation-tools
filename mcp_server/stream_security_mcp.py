@@ -279,19 +279,23 @@ def get_rule_violations(rule_id: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_custom_query(operation_name: Optional[str],
-                     variables: Dict[str, Any], query: str) -> Dict[str, Any]:
+def run_trpc_procedure(procedure: str, input_data: Optional[Dict[str, Any]] = None,
+                       mutation: bool = False) -> Dict[str, Any]:
     """
-    Run a custom GraphQL query.
-    
-    Executes a custom GraphQL query against the Stream Security API.
+    Call a Stream Security API procedure by name.
+
+    Calls a procedure such as "rules.list" or "inventory.search" with the given input.
+    Set mutation to True for a procedure that changes data.
     """
     graph_client = connect().get("client", None)
     if not graph_client:
         return {"status": "error", "message": "Not connected. Use connect() first."}
 
     try:
-        result = graph_client.graph_query(operation_name, variables, query)
+        if mutation:
+            result = graph_client.trpc_mutation(procedure, input_data)
+        else:
+            result = graph_client.trpc_query(procedure, input_data)
         return {
             "status": "success",
             "result": result

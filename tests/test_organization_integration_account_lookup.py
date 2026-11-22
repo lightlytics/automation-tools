@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.python.common.graph_common import GraphCommon
+from src.python.common.graph_common import GraphCommon, TRPCError
 from src.python.utilities import organization_integration as oi
 
 
@@ -78,24 +78,24 @@ class TestFailedAccountListingDoesNotCreateAccount(unittest.TestCase):
 
 
 class TestGetAccountsRaiseOnError(unittest.TestCase):
-    def _client(self, graph_response):
+    def _client(self, result):
         client = GraphCommon.__new__(GraphCommon)   # skip login
         client.url = "https://example.streamsec.io/graphql"
-        client.graph_query = MagicMock(return_value=graph_response)
+        client.trpc_query = MagicMock(side_effect=[result])
         return client
 
     def test_errored_response_raises_when_asked(self):
-        for response in (None, {"errors": [{"message": "Gateway Time-out"}]}, {"data": {"accounts": None}}):
-            with self.subTest(response=response):
+        for result in (TRPCError("integrations.cloud_accounts_api.list failed with HTTP 504"), None, {}):
+            with self.subTest(result=result):
                 with self.assertRaises(Exception):
-                    self._client(response).get_accounts(raise_on_error=True)
+                    self._client(result).get_accounts(raise_on_error=True)
 
     def test_errored_response_still_returns_empty_list_by_default(self):
         with patch("builtins.print"):
-            self.assertEqual(self._client(None).get_accounts(), [])
+            self.assertEqual(self._client(TRPCError("HTTP 504")).get_accounts(), [])
 
     def test_genuinely_empty_list_does_not_raise(self):
-        self.assertEqual(self._client({"data": {"accounts": []}}).get_accounts(raise_on_error=True), [])
+        self.assertEqual(self._client([]).get_accounts(raise_on_error=True), [])
 
 
 class TestMainPassesNormalizedApiUrl(unittest.TestCase):
