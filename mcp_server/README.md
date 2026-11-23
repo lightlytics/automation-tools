@@ -10,7 +10,7 @@ The Stream Security MCP Server enables interaction with the Stream Security plat
 - Search and explore resources
 - View resource configurations
 - Check compliance rules and violations
-- Run custom GraphQL queries
+- Call any API procedure by name (e.g. `rules.list`)
 
 ## Prerequisites
 
