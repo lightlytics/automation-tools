@@ -59,7 +59,55 @@ DETECTION_ENRICHMENT_KEYS = ('_id', 'timestamp', 'activity_type', 'source', 'acc
                              'resource_namespace', 'resource_deployment', 'mitre_categories', 'acknowledged',
                              'signal_types', 'session_list', 'acknowledgement_details', 'external_id', 'external_url',
                              'json_data', 'signals')
+SESSION_KEYS = ('ip_address', 'access_key', 'user_agent', 'country_code_iso', 'mfa')
 PAGE_SIZE = 500
+
+
+def _attribute_selection(depth):
+    """ The old query selected six nested levels of condition attributes. """
+    fields = ('name', 'value', 'match_type', 'operand', '__typename')
+    if depth > 1:
+        fields += (('attributes_list', _attribute_selection(depth - 1)),)
+    return 'ConditionAttribute', fields
+
+
+ATTRIBUTES_GROUP = ('ConditionAttributesGroup', ('operand', ('attributes_list', _attribute_selection(6))))
+RESOURCE_CONDITION = ('ResourceCondition', ('resource_id', 'resource_type', ('attributes', ATTRIBUTES_GROUP),
+                                            ('tags', ATTRIBUTES_GROUP),
+                                            ('locations', ('ConditionLocation', ('location_type', 'location_value')))))
+PORT_RANGE = ('PortRange', ('start', 'end', 'protocol'))
+SESSION_LIST = ('SessionList', (('ip_addresses', ('IpAddress', ('Ip', 'CountryCode'))), 'access_keys', 'user_agents',
+                                'src_resource_type'))
+COORDINATES = ('Coordinates', ('x_coords', 'y_coords'))
+IP_RECORD = ('IpRecord', ('ip_address', 'severity', 'hosts', 'ports', 'initiated_session', 'vol_traffic'))
+RESOURCE_TYPE_ACTIONS = ('ResourceTypesByResourcesActions', (
+    'resource_type', ('anomalous_actions', ('AnomalousAction', ('action', 'mitre_category', 'resource_ids',
+                                                                'sub_resource', 'regions', 'destinations',
+                                                                'request_uri')))))
+# The fields the old query selected for each signal type; any other type returned only signal_type.
+SIGNAL_FIELDS = {
+    'MaliciousIpSignal': (('malicious_ip_records', IP_RECORD),),
+    'TorIpSignal': (('tor_ip_records', IP_RECORD),),
+    'PentestToolSignal': ('agents',),
+    'UnusualActivityTimeSignal': ('activity_time',),
+    'UnusualActionTypeSignal': (('resource_types_by_resources_actions', RESOURCE_TYPE_ACTIONS),),
+    'AnomalousGeoLocationSignal': ('locations',),
+    'ActivityInUnusualRegionSignal': (('unusual_activities_by_regions', ('UnusualActivitiesByRegions', (
+        'location', ('unusual_resource_types_actions', RESOURCE_TYPE_ACTIONS)))),),
+    'AnomalousTrafficVolumeSignal': ('volume_size', ('plot_coords', COORDINATES), ('top_destination_ips', IP_RECORD)),
+    'AnomalousOutboundConnectionSignal': (('destination_ips', IP_RECORD),),
+    'PossiblePortScanSignal': (('plot_coords', COORDINATES),),
+    'PossibleInternalIpScanSignal': (('plot_coords', COORDINATES),),
+    'AnomalousCountOfRejectedFlowsSignal': (('plot_coords', COORDINATES),),
+    'AnomalousDataStoreConnectivitySignal': ('resource_ids', 'resource_types'),
+    'AnomalousCountOfGetObjectsSignal': (('plot_coords', COORDINATES),),
+    'UnusualCostSpikeSignal': ('service', ('plot_coords', COORDINATES)),
+    'DetectionRuleActivitySignal': ('rule_id', 'rule_name', 'description', 'type', 'window_start', 'window_end',
+                                    ('plot_coords', COORDINATES),
+                                    ('custom_config', ('CustomRuleConfig', ('log_type', 'detection_field'))),
+                                    ('identityml_config', ('IdentityMLRuleConfig', ('match_type', 'action')))),
+    'GenericThirdPartyActivitySignal': ('name', 'description', 'mitre_categories'),
+}
 
 
 class TRPCError(Exception):
@@ -73,6 +121,26 @@ def _pick(row, keys, typename=None):
     out = {key: row.get(key) for key in keys}
     if typename:
         out['__typename'] = typename
+    return out
+
+
+def _shape(value, selection):
+    """ The value as a GraphQL selection returned it. selection is (typename, fields); a field is a key, a
+        (key, selection) pair for a nested object, or '__typename' where the selection placed it. """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [_shape(v, selection) for v in value]
+    typename, fields = selection
+    out = {}
+    for field in fields:
+        if field == '__typename':
+            out[field] = typename
+        elif isinstance(field, tuple):
+            out[field[0]] = _shape(value.get(field[0]), field[1])
+        else:
+            out[field] = value.get(field)
+    out.setdefault('__typename', typename)
     return out
 
 
@@ -469,7 +537,9 @@ class GraphCommon(object):
         """
         rule = self.trpc_query("rules.detail", {"id": rule_id})
         for predicate in RULE_PREDICATES:
-            rule[f"{predicate}_predicate"] = (rule.get(f"{predicate}_predicates") or [None])[0]
+            rule[f"{predicate}_predicate"] = _shape((rule.get(f"{predicate}_predicates") or [None])[0],
+                                                    RESOURCE_CONDITION)
+        rule['ports'] = _shape(rule.get('ports'), PORT_RANGE)
         return _pick(rule, RULE_METADATA_KEYS, 'Rule')
 
     def get_rule_violations(self, rule_id):
@@ -735,7 +805,17 @@ class GraphCommon(object):
 
     def get_detection_enrichment(self, detection_id):
         data = self.trpc_query("detections.detail", {"filters": {"_id": [detection_id]}})
-        return [self._detection(r, DETECTION_ENRICHMENT_KEYS) for r in data['results']]
+        enrichment = [self._detection(r, DETECTION_ENRICHMENT_KEYS) for r in data['results']]
+        for detection in enrichment:
+            # Older detections keep a list of sessions, newer ones one session summary.
+            sessions = detection['session_list']
+            detection['session_list'] = _shape(sessions, ('Session', SESSION_KEYS) if isinstance(sessions, list)
+                                               else SESSION_LIST)
+            signals = detection['signals']
+            detection['signals'] = None if signals is None else [
+                _shape(s, (s['__typename'], ('signal_type',) + SIGNAL_FIELDS.get(s['__typename'], ())))
+                for s in signals]
+        return enrichment
 
     @staticmethod
     def _detection(row, keys):

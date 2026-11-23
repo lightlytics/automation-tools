@@ -148,11 +148,58 @@ class TestReturnShapes(unittest.TestCase):
         _, req = self.call("general_resource_search", {"results": []}, "prod")
         self.assertEqual(sent_input(req.call_args)["limit"], 100)
 
-    def test_rule_metadata_has_the_singular_predicates(self):
-        rule = {"id": "r1", "resource_predicates": [{"resource_type": "instance"}], "path_source_predicates": []}
+    def test_rule_metadata_has_the_singular_predicates_in_the_old_shape(self):
+        rule = {"id": "r1", "resource_predicates": [{"resource_type": "instance", "is_expired": False}],
+                "path_source_predicates": [], "path_destination_predicates": [{"resource_id": "i-1"}],
+                "ports": [{"start": 22, "end": 22, "match": "any"}]}
         result, _ = self.call("get_rule_metadata", rule, "r1")
-        self.assertEqual(result["resource_predicate"], {"resource_type": "instance"})
+        self.assertEqual(result["resource_predicate"], {"resource_id": None, "resource_type": "instance",
+                                                        "attributes": None, "tags": None, "locations": None,
+                                                        "__typename": "ResourceCondition"})
         self.assertIsNone(result["path_source_predicate"])
+        # The compliance report reads resource_type with [] and falls back to another predicate when it is None.
+        self.assertIsNone(result["path_destination_predicate"]["resource_type"])
+        self.assertEqual(result["ports"], [{"start": 22, "end": 22, "protocol": None, "__typename": "PortRange"}])
+
+    def test_condition_attributes_keep_the_six_levels_the_old_query_selected(self):
+        level = {"name": "a7"}
+        for depth in range(6, 0, -1):
+            level = {"name": f"a{depth}", "attributes_list": [level]}
+        rule = {"id": "r1", "resource_predicates": [{"tags": {"operand": "AND", "attributes_list": [level]}}]}
+        result, _ = self.call("get_rule_metadata", rule, "r1")
+        attribute = result["resource_predicate"]["tags"]["attributes_list"][0]
+        self.assertEqual(list(attribute), ["name", "value", "match_type", "operand", "__typename", "attributes_list"])
+        for _ in range(5):
+            attribute = attribute["attributes_list"][0]
+        self.assertEqual(attribute["name"], "a6")
+        self.assertNotIn("attributes_list", attribute)
+
+    def test_enrichment_sessions_keep_their_keys_in_either_stored_shape(self):
+        sessions = {"_id": "d1", "session_list": [{"ip_address": "203.0.113.1", "src_resource_type": "user"}]}
+        summary = {"_id": "d2", "session_list": {"ip_addresses": [{"Ip": "203.0.113.1", "CountryCode": "US"}]}}
+        [result], _ = self.call("get_detection_enrichment", {"results": [sessions]}, "d1")
+        self.assertEqual(result["session_list"], [{"ip_address": "203.0.113.1", "access_key": None,
+                                                   "user_agent": None, "country_code_iso": None, "mfa": None,
+                                                   "__typename": "Session"}])
+        self.assertIsNone(result["signals"])
+        [result], _ = self.call("get_detection_enrichment", {"results": [summary]}, "d2")
+        self.assertEqual(result["session_list"], {"ip_addresses": [{"Ip": "203.0.113.1", "CountryCode": "US",
+                                                                    "__typename": "IpAddress"}],
+                                                  "access_keys": None, "user_agents": None,
+                                                  "src_resource_type": None, "__typename": "SessionList"})
+
+    def test_enrichment_signals_keep_the_fields_the_old_query_selected(self):
+        signals = [{"signal_type": "malicious_ip_signal", "__typename": "MaliciousIpSignal", "score": 9,
+                    "malicious_ip_records": [{"ip_address": "203.0.113.1", "country": "US"}]},
+                   {"signal_type": "anomalous_api_call_signal", "__typename": "AnomalousApiCallSignal",
+                    "http_path": "/login"}]
+        [result], _ = self.call("get_detection_enrichment", {"results": [{"_id": "d1", "signals": signals}]}, "d1")
+        self.assertEqual(result["signals"], [
+            {"signal_type": "malicious_ip_signal",
+             "malicious_ip_records": [{"ip_address": "203.0.113.1", "severity": None, "hosts": None, "ports": None,
+                                       "initiated_session": None, "vol_traffic": None, "__typename": "IpRecord"}],
+             "__typename": "MaliciousIpSignal"},
+            {"signal_type": "anomalous_api_call_signal", "__typename": "AnomalousApiCallSignal"}])
 
     def test_rule_violations_are_resource_ids(self):
         result, _ = self.call("get_rule_violations", {"results": [{"subject_id": "i-1"}], "total_count": 1}, "r1")
